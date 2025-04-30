@@ -84,17 +84,18 @@ class Calibrate():
             else:
                 spectra[mask] = np.nan
 
-        plt.figure(figsize=(250,5))
-        for mask in range(self.total_masks//2):
-            plt.plot(bins,spectra[mask])
-        plt.show()
+        # plt.figure(figsize=(250,5))
+        # for mask in range(self.total_masks//2):
+        #     plt.plot(bins,spectra[mask])
+        # plt.show()
 
-        plt.figure(dpi=300)
-        plt.imshow(wl_mask,origin="lower",cmap="magma")
-        plt.axis("off")
-        plt.show()
+        # plt.figure(dpi=300)
+        # plt.imshow(wl_mask,origin="lower",cmap="magma")
+        # plt.axis("off")
+        # plt.show()
 
-        fits.writeto("wl_mask.fits",wl_mask,overwrite=True)
+        # fits.writeto("wl_mask.fits",wl_mask,overwrite=True)
+        fits.writeto("spectrabins.fits",spectra,overwrite=True)
         
         save_dict = dict(npzdata)
         save_dict["wl_bins"] = bins
@@ -110,45 +111,42 @@ class Calibrate():
         sky_ints = np.empty((self.total_masks//2,len(self.isol_sky_lines)))
         sky_errs = np.empty((self.total_masks//2,len(self.isol_sky_lines)))
 
-        masks_l = np.arange(self.total_masks//2)+1
-        for m in masks_l:
-            if (m-1) not in bad_mask:
-                sky_int = []
-                sky_err = []
+        for m in np.arange(self.total_masks//2):
+            if m not in bad_mask:
                 offset = 8
 
                 for i,line in enumerate(self.isol_sky_lines):
                     mask_area = ((wl)>(self.isol_sky_lines[i]-offset))&((wl)<(self.isol_sky_lines[i]+offset))
-                    mask_area = mask_area&(~np.isnan(intensity[m-1]))
+                    mask_area = mask_area&(~np.isnan(intensity[m]))
                     
                     try:
                         p0 = [0,
                         0,
-                        np.nanmax(intensity[m-1][mask_area]),
-                        np.argmax(intensity[m-1][mask_area])+np.nanmin(wl[mask_area]),
+                        np.nanmax(intensity[m][mask_area]),
+                        np.argmax(intensity[m][mask_area])+np.nanmin(wl[mask_area]),
                         5/3]
                         popt,pcov = scipy.optimize.curve_fit(self.gauss_background,
                                                                 wl[mask_area],
-                                                                intensity[m-1][mask_area],p0=p0)
+                                                                intensity[m][mask_area],p0=p0)
                         
                         perr = np.sqrt(np.diag(pcov))
                         gauss_x = np.linspace(wl[mask_area][0],wl[mask_area][-1],100)
                         
                         popt[0] = 0
                         popt[1] = 0
-                        sky_ints[m-1,i] = np.trapezoid(self.gauss_background(gauss_x,*popt),gauss_x)
+                        sky_ints[m,i] = np.round(np.trapezoid(self.gauss_background(gauss_x,*popt),gauss_x),2)
                         # sky_int.append(popt[2])
-                        sky_errs[m-1,i] = perr[3]
+                        sky_errs[m,i] = perr[3]
                     except:
-                        sky_ints[m-1,i] = 0
-                        sky_errs[m-1,i] = np.inf
+                        sky_ints[m,i] = 0
+                        sky_errs[m,i] = np.inf
                 
                 # sky_ints.append(np.array(sky_int))
                 # sky_errs.append(np.array(sky_err))
             else:
-                sky_ints[m-1,i] = 0
-                sky_errs[m-1,i] = np.inf
-                
+                sky_ints[m,i] = 0
+                sky_errs[m,i] = np.inf
+
         return np.array(sky_ints),np.array(sky_errs)
     
     def intensity_corr(self) -> None:
@@ -160,49 +158,70 @@ class Calibrate():
             sky_int,sky_err = self.get_sky_weights(npzdata["wl_bins"],npzdata["flux_bins"],bad_mask)
             sky_ints = np.vstack((sky_ints,sky_int))
             sky_errs = np.vstack((sky_errs,sky_err))
-        print(sky_ints.shape)
         avg_sky = np.average(sky_int,axis=0,weights=1./sky_err)
         # avg_sig = np.mean(sky_err[np.isfinite(sky_err)])
         
         deg = 1
-        full_intensity = np.empty((self.total_masks,shape))
-        masks_l = np.arange(self.total_masks//2)+1
+        full_intensity = np.empty((0,shape))
         for color_idx,color in enumerate(["b","r"]):
             _,_,_,_,trace_data,_,_,bad_mask = self.get_color_info(color)
             npzdata = np.load(trace_data)
             intensity = npzdata["flux_bins"]
             wl = npzdata["wl_bins"]
-            for m in masks_l:
-                if (m-1) not in bad_mask:
-                    try:
-                        if color == "r":
-                            c_m = m+276
-                        else:
-                            c_m = m
-                        sky_int = np.array(sky_ints[c_m-1])
-                        mask0 = sky_int!=0
-                        ratio = avg_sky[mask0]/sky_int[mask0]
-                        w_ = np.nan_to_num(1/np.array(sky_errs[c_m-1])[mask0],nan=0)
-                        int_fit_ = np.polyfit(self.isol_sky_lines[mask0],ratio,deg,w=w_)
-                        diff = ratio-np.poly1d(int_fit_)(self.isol_sky_lines[mask0])
-                        mask = (ratio<(np.poly1d(int_fit_)(self.isol_sky_lines[mask0])+1.5*np.std(diff)))&(ratio>(np.poly1d(int_fit_)(self.isol_sky_lines[mask0])-1.5*np.std(diff)))
-                        w = np.nan_to_num(1/np.array(sky_errs[c_m-1])[mask0][mask],nan=0)
-                        int_fit = np.polyfit(self.isol_sky_lines[mask0][mask],ratio[mask],deg,w=w)
-                    
-                        full_intensity[c_m-1] = np.poly1d(int_fit)(wl)*intensity[m-1]
-                    except:
-                        print("error in intensity fit")
-                        full_intensity[c_m-1] = np.nan
-                else:
-                    full_intensity[c_m-1] = np.nan
+            for m in np.arange(self.total_masks//2):
+                if m not in bad_mask:
+                    # try:
+                    if color == "r":
+                        c_m = int(m+self.total_masks//2)
+                    else:
+                        c_m = m
+                    sky_int = np.array(sky_ints[c_m])
+                    sky_err = np.array(sky_errs[c_m])
+                    # mask0 = (sky_int!=0)&(np.isfinite(sky_err))
+                    ratio = avg_sky/sky_int
+                    # ratio shouldn't be extremely high or low
+                    mask0 = (ratio<(np.nanmedian(ratio)+3*np.nanstd(ratio[np.isfinite(ratio)])))&(ratio>(np.nanmedian(ratio)-3*np.nanstd(ratio[np.isfinite(ratio)])))&(ratio!=0)&(np.isfinite(ratio))
+                    ratio = ratio[mask0]
+                    w_ = np.nan_to_num(1/np.array(sky_err)[mask0],nan=0)
+                    # int_fit_ = np.polyfit(self.isol_sky_lines[mask0],ratio,deg,w=w_)
 
-        plt.figure(figsize=(300,10))
-        for m in np.arange(self.total_masks):
-            if m<276:
-                plt.plot(wl,full_intensity[m],color="blue",alpha=0.05)
-            else:
-                plt.plot(wl,full_intensity[m],color="red",alpha=0.05)
-        plt.show()
+                    # plt.scatter(self.isol_sky_lines[mask0],ratio,c=ifum_utils.normalize(w_))
+                    # plt.show()
+
+                    # diff = ratio-np.poly1d(int_fit_)(self.isol_sky_lines[mask0])
+                    # mask = (ratio<(np.poly1d(int_fit_)(self.isol_sky_lines[mask0])+1.5*np.std(diff)))&(ratio>(np.poly1d(int_fit_)(self.isol_sky_lines[mask0])-1.5*np.std(diff)))
+                    # w = np.nan_to_num(1/np.array(sky_errs[c_m])[mask0][mask],nan=0)
+                    # int_fit = np.polyfit(self.isol_sky_lines[mask0][mask],ratio[mask],deg,w=w)
+
+                    fit_mask,int_fit = ifum_utils.sigma_clip(self.isol_sky_lines[mask0],ratio,deg,w_,sigma=3.0)
+                    # plt.scatter(self.isol_sky_lines[mask0],ratio,c=ifum_utils.normalize(w_))
+                    # plt.scatter(self.isol_sky_lines[mask0][fit_mask],ratio[fit_mask],c="red",marker="x",alpha=0.5)
+                    # plt.show()
+
+                    fit_mask_,int_fit = ifum_utils.sigma_clip(self.isol_sky_lines[mask0][fit_mask],ratio[fit_mask],deg+1,w_[fit_mask],sigma=1.0)
+                    # plt.scatter(self.isol_sky_lines[mask0][fit_mask],ratio[fit_mask],c=ifum_utils.normalize(w_[fit_mask]))
+                    # plt.scatter(self.isol_sky_lines[mask0][fit_mask][fit_mask_],ratio[fit_mask][fit_mask_],c="red",marker="x",alpha=0.5)
+                    # plt.plot(self.isol_sky_lines[mask0][fit_mask],np.poly1d(int_fit)(self.isol_sky_lines[mask0][fit_mask]),c="red")
+                    # plt.show()
+                
+                    full_intensity = np.vstack((full_intensity,np.poly1d(int_fit)(wl)*intensity[m]))
+                    # full_intensity[c_m] = np.poly1d(int_fit)(wl)*intensity[m]
+                    # except:
+                    #     print("error in intensity fit")
+                    #     full_intensity[c_m] = np.nan
+                else:
+                    full_intensity = np.vstack((full_intensity,np.repeat(np.nan,shape)))
+                    # full_intensity[c_m] = np.nan
+
+        # plt.figure(figsize=(300,10))
+        # for m in np.arange(self.total_masks):
+        #     if m<276:
+        #         plt.plot(wl,full_intensity[m],color="blue",alpha=0.05)
+        #     else:
+        #         plt.plot(wl,full_intensity[m],color="red",alpha=0.05)
+        # plt.show()
+
+        # fits.writeto("spectrabins_int.fits",full_intensity,overwrite=True)
 
         npzdir = os.path.join(os.path.relpath("out"),self.datafilename+"_spectra.npz")
         save_dict = {'wl': wl,

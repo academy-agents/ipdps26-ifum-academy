@@ -244,28 +244,28 @@ class Rectify():
     
 
 
-        plt.figure(figsize=(15,3))
-        # plt.title(f"{data_filename+color}")
-        arc_colors = sns.color_palette("Blues",as_cmap=True)((arc_stds+.1)*0.8)
-        sky_colors = sns.color_palette("Oranges",as_cmap=True)((stds+.1)*0.8)
-        plt.vlines(arc_centers,0,1.9,color=arc_colors,alpha=0.7)
-        plt.vlines(centers,0,1.9,color=sky_colors,alpha=0.7)
-        for i,line in enumerate(self.clear_emission_lines):
-            plt.text(arc_centers[i],1.9, 
-                    str(f"arc {line:.3f}Å"), color="white",
-                    ha='center',va='top',fontsize=8,rotation='vertical',backgroundcolor=arc_colors[i])
-        for i,line in enumerate(self.sky_lines):
-            plt.text(centers[i],1.9, 
-                    str(f"sky {line:.3f}Å"), color="white",
-                    ha='center',va='top',fontsize=8,rotation='vertical',backgroundcolor=sky_colors[i])
-        plt.plot(arc_xs[0],ifum_utils.normalize(arc_intensities[0]),color="blue")
-        plt.plot(data_xs[0],ifum_utils.normalize(data_intensities[0]),color="orange")
-        plt.xlim(600,800)
-        plt.ylim(-0.05,1.95)
-        plt.axis("off")
-        plt.tight_layout()
-        plt.savefig("arc_sky_lines.png",dpi=300,bbox_inches="tight")
-        plt.show()
+        # plt.figure(figsize=(15,3))
+        # # plt.title(f"{data_filename+color}")
+        # arc_colors = sns.color_palette("Blues",as_cmap=True)((arc_stds+.1)*0.8)
+        # sky_colors = sns.color_palette("Oranges",as_cmap=True)((stds+.1)*0.8)
+        # plt.vlines(arc_centers,0,1.9,color=arc_colors,alpha=0.7)
+        # plt.vlines(centers,0,1.9,color=sky_colors,alpha=0.7)
+        # for i,line in enumerate(self.clear_emission_lines):
+        #     plt.text(arc_centers[i],1.9, 
+        #             str(f"arc {line:.3f}Å"), color="white",
+        #             ha='center',va='top',fontsize=8,rotation='vertical',backgroundcolor=arc_colors[i])
+        # for i,line in enumerate(self.sky_lines):
+        #     plt.text(centers[i],1.9, 
+        #             str(f"sky {line:.3f}Å"), color="white",
+        #             ha='center',va='top',fontsize=8,rotation='vertical',backgroundcolor=sky_colors[i])
+        # plt.plot(arc_xs[0],ifum_utils.normalize(arc_intensities[0]),color="blue")
+        # plt.plot(data_xs[0],ifum_utils.normalize(data_intensities[0]),color="orange")
+        # plt.xlim(600,800)
+        # plt.ylim(-0.05,1.95)
+        # plt.axis("off")
+        # plt.tight_layout()
+        # plt.savefig("arc_sky_lines.png",dpi=300,bbox_inches="tight")
+        # plt.show()
 
 
 

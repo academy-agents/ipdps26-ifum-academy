@@ -243,15 +243,15 @@ class Stack():
                         # plt.fill(*hexes[nearby_hex].exterior.xy,color="blue",alpha=0.2,edgecolor="none")
 
                     # NOTE: will accept NaN values, but this can mess with result a bit
-                    nearby_weights = np.nan_to_num(nearby_weights,nan=0)
+                    # nearby_weights = np.nan_to_num(nearby_weights,nan=0)
                     corr_coord = np.average(nearby_centroids,axis=0,weights=nearby_weights)
                     shifted_coords_corr.append(corr_coord)
                     # print(coord,corr_coord)
             shifted_coords_corr = np.array(shifted_coords_corr)
             all_coords.append(shifted_coords_corr)
-            # plt.scatter(shifted_coords[:,0],shifted_coords[:,1],color="red")
-            # plt.scatter(shifted_coords_corr[:,0],shifted_coords_corr[:,1],color="blue")
-            # plt.show()
+            plt.scatter(shifted_coords[:,0],shifted_coords[:,1],color="red")
+            plt.scatter(shifted_coords_corr[:,0],shifted_coords_corr[:,1],color="blue")
+            plt.show()
 
         # perform WCS transform
         print("performing WCS transforms...")

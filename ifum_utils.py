@@ -74,62 +74,125 @@ def get_x_from_point_simple(px, trace_poly, rotation_poly) -> float:
 
     return (trace_b-rot_b)/(rot_m-trace_m)
 
-def get_spectrum_fluxbins(mask, bins, traces, rotations, stds, sig_mult, x_s, wl_calib, data, cmray_mask, rand_dots=1000) -> np.ndarray:
-
+def get_spectrum_fluxbins(mask, bins, traces, rotations, stds, sig_mult, x_s, wl_calib, data, cmray_mask, rand_dots=50) -> np.ndarray:
     # first, compute bin edges from bins
     midpoints = 0.5 * (bins[1:] + bins[:-1])
     bin_edges = np.concatenate(([bins[0]-0.5*(bins[1]-bins[0])],
                                 midpoints,
                                 [bins[-1]+0.5*(bins[1]-bins[0])]))
-
+    
+    # compute a bigger mask to include all possible pixels in binning
     new_mask = np.zeros(cmray_mask.shape)
     for i in range(cmray_mask.shape[1]):
         mask_center_i = np.poly1d(traces[mask])(i)
-        mask_sig_i = 1.2*sig_mult*np.poly1d(stds[mask])(i)
+        mask_sig_i = sig_mult * np.poly1d(stds[mask])(i)
         new_mask[round(mask_center_i-mask_sig_i):round(mask_center_i+mask_sig_i+1),i] = 1
+    new_mask = scipy.ndimage.binary_dilation(new_mask,structure=np.ones((3,3))).astype(int)
     pixels = np.argwhere(new_mask==1)
     data[cmray_mask==1] = np.nan
-    weights = np.empty(pixels.shape[0])
 
+    # compute x_intercepts and wavelengths for all pixels
     x_intercepts = get_x_from_point_simple(pixels, traces[mask], rotations[mask])
     # use rectify to shift x_intercepts for proper calibration
     x_intercepts = np.interp(x_intercepts,np.arange(data.shape[1]),x_s[mask])
     wls = np.poly1d(wl_calib)(x_intercepts)
 
+    # get the average standard devation from spectra trace along mask
     std_avg = np.median(np.poly1d(stds[mask])(np.arange(2048)))
-    for i,px in enumerate(pixels):
-        # wls[i] = np.poly1d(wl_calib)(get_x_from_point(px, traces[mask], rotations[mask]))
-        center = np.poly1d(traces[mask])(px[1])
-        upper_bound,lower_bound = center+sig_mult*std_avg,center-sig_mult*std_avg
-        # upper_bound,lower_bound = center+sig_mult*np.poly1d(stds[mask])(px[1]),center-sig_mult*np.poly1d(stds[mask])(px[1])
-        if px[0]>center:
-            weights[i] = upper_bound+0.5-px[0]
-        else:
-            weights[i] = px[0]-(lower_bound-0.5)
-    weights[weights<=0] = 0
-    weights[weights>=1] = 1
+    # precompute centers, upper_bounds, and lower_bounds for all pixels
+    centers = np.poly1d(traces[mask])(pixels[:,1])
+    upper_bounds = centers+sig_mult*std_avg
+    lower_bounds = centers-sig_mult*std_avg
+    # compute weights for all pixels based on distance from spectra trace
+    weights = np.where(pixels[:,0]>centers,
+                       upper_bounds+0.5-pixels[:, 0],
+                       pixels[:,0]-(lower_bounds-0.5))
+    weights = np.clip(weights, 0, 1)
+
+    # weights_ = np.empty(pixels.shape[0])
+    # for i,px in enumerate(pixels):
+    #     # wls[i] = np.poly1d(wl_calib)(get_x_from_point(px, traces[mask], rotations[mask]))
+    #     center = np.poly1d(traces[mask])(px[1])
+    #     upper_bound,lower_bound = center+sig_mult*std_avg,center-sig_mult*std_avg
+    #     # upper_bound,lower_bound = center+sig_mult*np.poly1d(stds[mask])(px[1]),center-sig_mult*np.poly1d(stds[mask])(px[1])
+    #     if px[0]>center:
+    #         weights_[i] = upper_bound+0.5-px[0]
+    #     else:
+    #         weights_[i] = px[0]-(lower_bound-0.5)
+    # weights_[weights_<=0] = 0
+    # weights_[weights_>=1] = 1
+
+
 
     # ATTEMPT to do interpolation
     spectrum = np.zeros(bins.shape)
     vals = data[pixels[:,0],pixels[:,1]]*weights
-    for wl, val, px in zip(wls, vals, pixels):
-        # drop rand_dots dots in pixel
-        minx,maxx,miny,maxy = px[1]-0.5,px[1]+0.5,px[0]-0.5,px[0]+0.5
+    # prepare random point samples
+    x_points_all = []
+    y_points_all = []
+    for px in pixels:
+        minx, maxx = px[1]-0.5, px[1]+0.5
+        miny, maxy = px[0]-0.5, px[0]+0.5
+        # generate random points
         x_points = np.random.uniform(minx,maxx,rand_dots)
         y_points = np.random.uniform(miny,maxy,rand_dots)
-        points = np.column_stack((x_points, y_points))
-        # gets wavelengths for those dots
-        x_intercepts = get_x_from_point_simple(points, traces[mask], rotations[mask])
-        x_intercepts = np.interp(x_intercepts,np.arange(data.shape[1]),x_s[mask])
-        px_wls = np.poly1d(wl_calib)(x_intercepts)
-        print(np.mean(px_wls),np.std(px_wls),np.min(px_wls),np.max(px_wls))
-        # gets approximate proportions for each wavelength bin
-        counts, _ = np.histogram(px_wls, bins=bin_edges)
-        counts = counts/len(px_wls)        
+        x_points_all.append(x_points)
+        y_points_all.append(y_points)
+    x_points_all = np.concatenate(x_points_all)
+    y_points_all = np.concatenate(y_points_all)
+    # get x-intercepts for batch
+    points_all = np.column_stack((y_points_all,x_points_all))
+    x_intercepts_all = get_x_from_point_simple(points_all,traces[mask],rotations[mask])
+    x_intercepts_all = np.interp(x_intercepts_all,np.arange(data.shape[1]),x_s[mask])
+    
+    # batch wavelength and histogram calculation
+    px_wls_all = np.poly1d(wl_calib)(x_intercepts_all)
+    start_idx = 0
+    for px, val in zip(pixels,vals):
+        end_idx = start_idx+rand_dots
+        px_wls = px_wls_all[start_idx:end_idx]
+        
+        counts, _ = np.histogram(px_wls,bins=bin_edges)
+        counts = counts/len(px_wls)
 
-        spectrum = spectrum + counts*val
+        # cast so only counts != 0 turn into nan
+        if np.isnan(val):
+            counts[counts!=0] = np.nan
+            spectrum += counts
+        else:
+            spectrum += counts*val
+
+        start_idx = end_idx
+    # bins without wavelength become nan
+    spectrum[spectrum==0] = np.nan
+
+    # plt.figure(figsize=(300,10))
+    # plt.plot(bins,spectrum)
+    # plt.show()
 
     return spectrum, pixels, wls
+
+    # # ATTEMPT to do interpolation
+    # spectrum = np.zeros(bins.shape)
+    # vals = data[pixels[:,0],pixels[:,1]]*weights
+    # for wl, val, px in zip(wls, vals, pixels):
+    #     # drop rand_dots dots in pixel
+    #     minx,maxx,miny,maxy = px[1]-0.5,px[1]+0.5,px[0]-0.5,px[0]+0.5
+    #     x_points = np.random.uniform(minx,maxx,rand_dots)
+    #     y_points = np.random.uniform(miny,maxy,rand_dots)
+    #     points = np.column_stack((x_points, y_points))
+    #     # gets wavelengths for those dots
+    #     x_intercepts = get_x_from_point_simple(points, traces[mask], rotations[mask])
+    #     x_intercepts = np.interp(x_intercepts,np.arange(data.shape[1]),x_s[mask])
+    #     px_wls = np.poly1d(wl_calib)(x_intercepts)
+    #     # print(np.mean(px_wls),np.std(px_wls),np.min(px_wls),np.max(px_wls))
+    #     # gets approximate proportions for each wavelength bin
+    #     counts, _ = np.histogram(px_wls, bins=bin_edges)
+    #     counts = counts/len(px_wls)        
+
+    #     spectrum += counts*val
+
+    # return spectrum, pixels, wls
 
     # OLD digitized version (check bin_edges vs bins?)
     # vals = data[pixels[:,0],pixels[:,1]]*weights
@@ -280,3 +343,19 @@ def xy_to_radec_minimize(var,args):
 
     return np.mean((np.concatenate((calcras,calcdecs))-np.concatenate((ra,dec)))**2)
 
+
+
+def sigma_clip(x,y,deg,weight,sigma=1,iter=10,include=0.25):
+    fit = np.polyfit(x,y,deg,w=weight)
+    for j in range(iter):
+        mult = 1
+        polymask = y<(np.poly1d(fit)(x)+mult*sigma*np.nanstd(np.poly1d(fit)(x)))
+        polymask &= y>(np.poly1d(fit)(x)-mult*sigma*np.nanstd(np.poly1d(fit)(x)))
+        while np.sum(polymask)/len(x) < include:
+            mult += 1
+            polymask = y<(np.poly1d(fit)(x)+mult*sigma*np.nanstd(np.poly1d(fit)(x)))
+            polymask &= y>(np.poly1d(fit)(x)-mult*sigma*np.nanstd(np.poly1d(fit)(x)))
+        
+        fit = np.polyfit(x[polymask],y[polymask],deg,w=weight[polymask])
+
+    return polymask,fit
