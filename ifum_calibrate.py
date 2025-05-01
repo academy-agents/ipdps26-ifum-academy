@@ -134,7 +134,7 @@ class Calibrate():
                         
                         popt[0] = 0
                         popt[1] = 0
-                        sky_ints[m,i] = np.round(np.trapezoid(self.gauss_background(gauss_x,*popt),gauss_x),2)
+                        sky_ints[m,i] = np.trapezoid(self.gauss_background(gauss_x,*popt),gauss_x)
                         # sky_int.append(popt[2])
                         sky_errs[m,i] = perr[3]
                     except:

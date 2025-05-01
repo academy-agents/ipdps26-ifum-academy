@@ -268,7 +268,7 @@ class Stack():
             radecs = self.wcs_stars[~mask]
             # print(xys,radecs)
 
-            var = [0,0,0,0]
+            var = [0.001,0.001,0.001,0.001]
             args = [xys,xys,radecs]
                         
             result = scipy.optimize.minimize(ifum_utils.xy_to_radec_minimize, var, args=(args))
@@ -316,18 +316,20 @@ class Stack():
         # proper intensity calculation
         wl = np.load(self.npzfiles[0],allow_pickle=True)["wl"]
         all_intensities = np.empty((0,wl.size))
+        avg_intensities = np.empty((0,wl.size))
         for idx,npzfile in enumerate(self.npzfiles):
             npzdata = np.load(npzfile, allow_pickle=True)
             for intensity in npzdata["intensity"]:
                 all_intensities = np.vstack((all_intensities,intensity))
-        avgsky = np.nanmedian(all_intensities,axis=0)
+            avg_intensities = np.vstack((avg_intensities,np.nanmedian(npzdata["intensity"],axis=0)))
+        # avg_sky = np.nanmedian(all_intensities,axis=0)
         # print(all_intensities.shape)
 
         # first, get all sky intensity fits
-        sky_ints = np.empty((all_intensities.shape[0],len(self.isol_sky_lines)))
-        sky_errs = np.empty((all_intensities.shape[0],len(self.isol_sky_lines)))
+        sky_ints = np.empty((avg_intensities.shape[0],len(self.isol_sky_lines)))
+        sky_errs = np.empty((avg_intensities.shape[0],len(self.isol_sky_lines)))
 
-        for idx,intensity in enumerate(all_intensities):
+        for idx,intensity in enumerate(avg_intensities):
             sky_int = []
             sky_err = []
             offset = 8
@@ -352,42 +354,61 @@ class Stack():
                     popt[0] = 0
                     popt[1] = 0
                     sky_ints[idx,i] = np.trapezoid(ifum_utils.gauss_background(gauss_x,*popt),gauss_x)
-                    # sky_int.append(popt[2])
                     sky_errs[idx,i] = perr[3]
+                
                 except:
                     sky_ints[idx,i] = 0
                     sky_errs[idx,i] = np.inf
-                
-        sky_ints = np.array(sky_ints)
-        sky_errs = np.array(sky_errs)
-        # print(sky_ints.shape,sky_errs.shape)
 
+        sky_ints = np.array(sky_ints)
+        # ratios = sky_ints/sky_ints[0]
+        sky_errs = np.array(sky_errs)
+
+        # colors = []
+        # for i in range(9):
+        #     colors += ["#"+str(os.urandom(3).hex())]*552
+        # for m in np.arange(all_intensities.shape[0]):
+        #     plt.plot(wl,all_intensities[m],color=colors[m],alpha=0.01)
+        # plt.show()
+
+        avg_sky = np.average(sky_ints,axis=0,weights=1/sky_errs)
 
         deg = 1
-        full_intensity = np.empty(all_intensities.shape)
-        for idx,intensity in enumerate(all_intensities):
-            try:
-                mask0 = sky_ints[idx]!=0
-                ratio = avgsky[mask0]/sky_ints[idx][mask0]
-                w_ = np.nan_to_num(1/sky_errs[idx][mask0],nan=0)
-                int_fit_ = np.polyfit(self.isol_sky_lines[mask0],ratio,deg,w=w_)
-                diff = ratio-np.poly1d(int_fit_)(self.isol_sky_lines[mask0])
-                mask = (ratio<(np.poly1d(int_fit_)(self.isol_sky_lines[mask0])+1.5*np.std(diff)))&(ratio>(np.poly1d(int_fit_)(self.isol_sky_lines[mask0])-1.5*np.std(diff)))
-                w = np.nan_to_num(1/np.array(sky_errs[idx])[mask0][mask],nan=0)
-                int_fit = np.polyfit(self.isol_sky_lines[mask0][mask],ratio[mask],deg,w=w)
-                    
-                full_intensity[idx] = np.poly1d(int_fit)(wl)*intensity
-            except:
-                full_intensity[idx] = np.nan
+        full_intensity = np.empty((0,wl.size))
+        for idx, (sky_int,sky_err) in enumerate(zip(sky_ints,sky_errs)):
+            ratio = avg_sky/sky_int
 
-        # print(full_intensity.shape)
+            if not np.all(ratio == 1):
+                mask0 = ((ratio<(np.nanmedian(ratio)+3*np.nanstd(ratio[np.isfinite(ratio)])))
+                        &(ratio>(np.nanmedian(ratio)-3*np.nanstd(ratio[np.isfinite(ratio)]))))
+            else:
+                mask0 = ratio==ratio
+            ratio = ratio[mask0]
+            w_ = np.nan_to_num(1/np.array(sky_err)[mask0],nan=0)
+
+            fit_mask,int_fit = ifum_utils.sigma_clip(self.isol_sky_lines[mask0],ratio,deg,w_,sigma=3.0)
+            # plt.scatter(self.isol_sky_lines[mask0],ratio,c=ifum_utils.normalize(w_))
+            # plt.scatter(self.isol_sky_lines[mask0][fit_mask],ratio[fit_mask],c="red",marker="x",alpha=0.5)
+            # plt.show()
+
+            fit_mask_,int_fit = ifum_utils.sigma_clip(self.isol_sky_lines[mask0][fit_mask],ratio[fit_mask],deg+1,w_[fit_mask],sigma=1.0)
+            # plt.scatter(self.isol_sky_lines[mask0][fit_mask],ratio[fit_mask],c=ifum_utils.normalize(w_[fit_mask]))
+            # plt.scatter(self.isol_sky_lines[mask0][fit_mask][fit_mask_],ratio[fit_mask][fit_mask_],c="red",marker="x",alpha=0.5)
+            # plt.plot(self.isol_sky_lines[mask0][fit_mask],np.poly1d(int_fit)(self.isol_sky_lines[mask0][fit_mask]),c="red")
+            # plt.show()
+            
+            for intensity in all_intensities[idx*self.total_masks:(idx+1)*self.total_masks]:
+                full_intensity = np.vstack((full_intensity,intensity*np.poly1d(int_fit)(wl)))
+
+        # for m in np.arange(full_intensity.shape[0]):
+        #     plt.plot(wl,full_intensity[m],color=colors[m],alpha=0.01)
+        # plt.show()
 
         for idx,npzfile in enumerate(self.npzfiles):
             npzdata = np.load(npzfile, allow_pickle=True)
             
             save_dict = dict(npzdata)
             intensity_seg = full_intensity[idx*self.total_masks:(idx+1)*self.total_masks]
-            print(intensity_seg.shape)
             save_dict["norm_intensity"] = intensity_seg
             np.savez(npzfile, **save_dict)
 
@@ -407,45 +428,60 @@ class Stack():
         all_wcs_hexes = np.array(all_wcs_hexes)
         all_intensity = np.array(all_intensity)
 
-        print(wcs_pixels.shape)
-        print(wcs_pixels)
-        print(all_wcs_hexes.shape)
-        print(all_wcs_hexes)
+        # print(wcs_pixels.shape)
+        # print(wcs_pixels)
+        # print(all_wcs_hexes.shape)
+        # print(all_wcs_hexes)
 
-        print("hexes")
-        for wcs_pixel in all_wcs_hexes:
-            if not wcs_pixel.is_valid:
-                print(explain_validity(wcs_pixel))
-                plt.fill(*wcs_pixel.exterior.xy,color="blue",alpha=0.5,edgecolor="black")
-                plt.show()
+        # print("invalid hexes?")
+        # for wcs_pixel in all_wcs_hexes:
+        #     if not wcs_pixel.is_valid:
+        #         print(explain_validity(wcs_pixel))
+        #         plt.fill(*wcs_pixel.exterior.xy,color="blue",alpha=0.5,edgecolor="black")
+        #         plt.show()
 
         percentages = ifum_hexagonify.get_overlap_percentages(wcs_pixels,all_wcs_hexes)
         for bad_mask in self.bad_masks[0]:
             percentages[:,bad_mask::self.total_masks] = 0
         for bad_mask in self.bad_masks[1]:
             percentages[:,(bad_mask+self.total_masks//2)::self.total_masks] = 0    
-        new_percentages = percentages/(percentages.sum(axis=1,keepdims=True))
-        new_percentages_ = np.transpose(new_percentages.reshape((self.run_params["pixels"].shape[0],self.run_params["pixels"].shape[1],all_intensity.shape[0])),axes=(1,0,2))
-        print(new_percentages_)
-        print(new_percentages_.shape)
+        
+        # some hexagons do not have valid values
+        # valid_hex_mask = ~np.any(np.isnan(all_intensity),axis=1)
+        # percentages[:,~valid_hex_mask] = 0
+        row_sums = percentages.sum(axis=1,keepdims=True)
+        row_sums[row_sums==0] = 1
+        new_percentages = percentages/row_sums
+        new_percentages_ = np.transpose(new_percentages.reshape((wcs_pixels_.shape[0],wcs_pixels_.shape[1],all_intensity.shape[0])),axes=(1,0,2))
 
-        data_cube = np.empty((all_intensity.shape[1],new_percentages_.shape[1],new_percentages_.shape[0]))
-
+        data_cube = np.full((all_intensity.shape[1], new_percentages_.shape[1], new_percentages_.shape[0]), np.nan)
+        data_cube_ss = np.full_like(data_cube, np.nan)
         all_intensity_skysub = all_intensity-np.nanmedian(all_intensity,axis=0)
-        # all_intensity_skysub = np.empty(all_intensity.shape)
-        # for i in range(len(self.datafilenames)):
-        #     all_intensity_skysub[552*i:552*(i+1),:] = all_intensity[552*i:552*(i+1),:]-np.nanmedian(all_intensity[552*i:552*(i+1),:],axis=0)
-        data_cube_ss = np.empty((all_intensity.shape[1],new_percentages_.shape[1],new_percentages_.shape[0]))
+
+        # def compute_weighted_average(intensity, weights):
+        #     masked_weights = np.where(np.isnan(intensity),0,weights[:,None])
+        #     weighted_intensity = masked_weights*np.nan_to_num(intensity)
+        #     total_weights = np.sum(masked_weights,axis=0)
+        #     total_weights[total_weights==0] = np.nan
+        #     return np.sum(weighted_intensity,axis=0) / total_weights
+
+        def compute_weighted_average(intensity, weights):
+            valid_mask = ~np.isnan(intensity)
+            masked_weights = weights[:, None] * valid_mask
+            weighted_intensity = weights[:, None] * np.nan_to_num(intensity)
+            total_weights = np.sum(masked_weights, axis=0)
+            weighted_sum = np.sum(weighted_intensity, axis=0)
+            result = weighted_sum / total_weights
+            result[total_weights == 0] = np.nan
+            return result
 
         for i in tqdm(range(len(new_percentages_))):
-            for j in range(len(new_percentages_[0])):        
-                to_sum = (np.array([new_percentages_[i][j]])).T*all_intensity
-                to_sum[np.where(new_percentages_[i][j]==0)] = 0
-                data_cube[:,j,i] = np.sum(to_sum,axis=0)#np.sum((np.array([new_percentages_[i][j]]).T*all_intensity),axis=0)
+            for j in range(len(new_percentages_[0])):   
+                weights = new_percentages_[i][j]
+                data_cube[:,j,i] = compute_weighted_average(all_intensity,weights)
+                data_cube_ss[:,j,i] = compute_weighted_average(all_intensity_skysub,weights)
 
-                to_sum = (np.array([new_percentages_[i][j]])).T*all_intensity_skysub
-                to_sum[np.where(new_percentages_[i][j]==0)] = 0
-                data_cube_ss[:,j,i] = np.sum(to_sum,axis=0)
+
 
         # get total CD matrix!
         # center pixel, get pixels around it, optimize CD on those pixels
