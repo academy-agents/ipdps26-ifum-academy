@@ -1,5 +1,6 @@
 import numpy as np
 import scipy
+import math
 import os
 import ifum_utils
 from astropy.io import fits
@@ -73,66 +74,29 @@ class Rectify():
         n = 1 + 0.00008336624212083+0.02408926869968/(130.1065924522-s**2)+0.0001599740894897/(38.92568793293-s**2)
         return wavelengths*n
 
-
-
-    def rectify(self,arc_or_data="arc") -> None:
+    def optimize_centers(self,arc_or_data="arc",sig_mult=1.5) -> None: # re-fit gaussian centers with better trace masks
         if arc_or_data == "arc":
             npzdir = self.trace_arc
             npzfile = np.load(npzdir)
             data = fits.open(self.arcdir)[0].data
+            maskdir = os.path.join(os.path.relpath("out"),self.arcfilename+self.color+"_mask.fits")
+            mask_data = fits.open(maskdir)[0].data
+            cmrays = False
         else:
             npzdir = self.trace_data
             npzfile = np.load(npzdir)
             data = fits.open(self.datadir)[0].data
+            maskdir = os.path.join(os.path.relpath("out"),self.arcfilename+self.color+"_mask.fits")
+            mask_data = fits.open(maskdir)[0].data
+            cmrays = True
         centers = npzfile["centers"]
+        traces_sigma = np.load(self.trace_flat)["traces_sigma"]
+        masks_l = np.arange(self.total_masks//2)+1
 
         if np.intersect1d(self.bad_mask,np.arange(self.total_masks//2)).size > 0:
             _, _, ind2 = np.intersect1d(self.bad_mask,np.arange(self.total_masks//2),return_indices=True)
             for mask_ in ind2:
                 centers = np.insert(centers, mask_, np.nan, axis=1)
-        
-        full_shifts = np.empty((centers.shape))
-        masks_split = np.array(np.split(np.arange(self.total_masks//2),self.mask_groups))
-        centers_split = np.array(np.split(centers,self.mask_groups,axis=1))
-        masks_l = np.arange(self.total_masks//2)+1
-
-        for i in range(centers.shape[0]):
-            bad_fits = (~np.isin(masks_l, self.bad_mask))&(~np.isnan(centers[i]))
-            bad_fits = bad_fits&(abs((centers[i]-(np.poly1d(np.polyfit(masks_l[bad_fits],centers[i][bad_fits],2))(masks_l))))<3)
-            bad_fits_s = np.array(np.split(bad_fits,self.mask_groups))
-            
-            poly = []
-            poly_fits = []
-            for j in range(self.mask_groups):
-                segment_fit = np.polyfit(masks_split[j][bad_fits_s[j]],centers_split[j,i][bad_fits_s[j]],1)
-                res = scipy.optimize.minimize(ifum_utils.miniminize_double_linear_func,
-                            x0 = np.array([segment_fit[0],segment_fit[1],segment_fit[1]]), 
-                            args = np.array([masks_split[j][bad_fits_s[j]],centers_split[j,i][bad_fits_s[j]]]))
-                y_fit = ifum_utils.double_linear_func(res.x,masks_split[j])
-                
-                poly.append(y_fit)
-                poly_fits.append(centers_split[j,i]-y_fit)
-                
-            poly = np.array(poly)
-            poly_fits = np.array(poly_fits)
-            full_shifts[i] = poly.flatten()
-        
-        x = np.arange(0,data.shape[1],1)
-        x_s = np.empty((self.total_masks//2,data.shape[1]))
-        for mask in masks_l:
-            fit = np.polyfit(full_shifts[:,mask-1],full_shifts[:,0]-full_shifts[:,mask-1],2)
-            x_s[mask-1] = x+np.poly1d(fit)(x)
-        
-
-
-        # use mask file to get slightly better intensities
-        if arc_or_data == "arc":
-            maskdir = os.path.join(os.path.relpath("out"),self.arcfilename+self.color+"_mask.fits")
-            cmrays = False
-        else:
-            maskdir = os.path.join(os.path.relpath("out"),self.arcfilename+self.color+"_mask.fits")
-            cmrays = True
-        mask_data = fits.open(maskdir)[0].data
 
         intensities = np.empty((self.total_masks//2,data.shape[1]))
         if cmrays:
@@ -144,10 +108,128 @@ class Rectify():
             for i,m in enumerate(masks_l):
                 a = ifum_utils.get_spectrum_simple(data,mask_data,m)
                 intensities[i] = a
+        x = np.arange(data.shape[1])
+
+        # get centers for each peak area for each mask
+        centers_opt = np.zeros_like(centers)
+        for peak in range(len(centers)):
+            for i,mask in enumerate(masks_l):
+                if (mask-1) not in self.bad_mask:
+                    offset = math.ceil(sig_mult*np.median(np.poly1d(traces_sigma[int(mask-1)])(np.arange(data.shape[0]))))
+                    try:
+                        if (centers[peak][i]+offset)<(~np.isnan(intensities[i])).cumsum(0).argmax(0):
+                            mask_area = ((x)>(centers[peak][i]-(offset+1)))&((x)<(centers[peak][i]+(offset+1)))    
+                            mask_area = mask_area&(~np.isnan(intensities[i]))
+                            p0 = [0,np.max(intensities[i][mask_area]),np.argmax(intensities[i][mask_area])+np.min(x[mask_area]),offset/3]
+                            popt,_ = scipy.optimize.curve_fit(ifum_utils.gauss,x[mask_area],intensities[i][mask_area],p0=p0)                            
+                        else:
+                            mask_area = x>((~np.isnan(intensities[i])).cumsum(0).argmax(0)-offset*2)
+                            mask_area = mask_area&(~np.isnan(intensities[i]))
+                            p0 = [0,np.max(intensities[i][mask_area]),np.argmax(intensities[i][mask_area])+np.min(x[mask_area]),offset/3]
+                            popt,_ = scipy.optimize.curve_fit(ifum_utils.gauss,x[mask_area],intensities[i][mask_area],p0=p0)
+                        centers_opt[peak][i] = popt[2]
+                    except:
+                        # print(f"bad 1D peak fit: color {self.color}, mask {mask}, peak {peak}")
+                        centers_opt[peak][i] = np.nan
+                else:
+                    centers_opt[peak][i] = np.nan
+        
+        save_dict = dict(npzfile)
+        save_dict["centers_opt"] = centers
+        save_dict["rect_int"] = intensities
+        np.savez(npzdir, **save_dict)
+
+
+    def rectify(self,arc_or_data="arc") -> None:
+        if arc_or_data == "arc":
+            npzdir = self.trace_arc
+            npzfile = np.load(npzdir)
+            data = fits.open(self.arcdir)[0].data
+        else:
+            npzdir = self.trace_data
+            npzfile = np.load(npzdir)
+            data = fits.open(self.datadir)[0].data
+        centers = npzfile["centers_opt"]
+
+        # if np.intersect1d(self.bad_mask,np.arange(self.total_masks//2)).size > 0:
+        #     _, _, ind2 = np.intersect1d(self.bad_mask,np.arange(self.total_masks//2),return_indices=True)
+        #     for mask_ in ind2:
+        #         centers = np.insert(centers, mask_, np.nan, axis=1)
+        
+        full_shifts = np.empty((centers.shape))
+        masks_split = np.array(np.split(np.arange(self.total_masks//2),self.mask_groups))
+        centers_split = np.array(np.split(centers,self.mask_groups,axis=1))
+        masks_l = np.arange(self.total_masks//2)+1
+
+        for i in range(centers.shape[0]):
+            bad_fits = ~np.isnan(centers[i])
+            # bad_fits = (~np.isin(masks_l, (self.bad_mask+1)))&(~np.isnan(centers[i]))
+            # bad_fits = bad_fits&(abs((centers[i]-(np.poly1d(np.polyfit(masks_l[bad_fits],centers[i][bad_fits],2))(masks_l))))<3)
+            error_from_basic_fit = np.nanmean((centers[i] - np.poly1d(np.polyfit(masks_l[bad_fits],centers[i][bad_fits],3))(masks_l))**2)
+            bad_fits_s = np.array(np.split(bad_fits,self.mask_groups))
+
+            # plt.figure(figsize=(8,3))
+            # plt.title(error_from_basic_fit)
+            # plt.scatter(masks_l,centers[i],color="red")
+            # plt.scatter(masks_l[bad_fits],centers[i][bad_fits],color="blue")
+            # plt.plot(masks_l,np.poly1d(np.polyfit(masks_l[bad_fits],centers[i][bad_fits],2))(masks_l))
+            # plt.show()
+
+            # mse is usually <1, if it's this large, something is wrong in the centers
+            if error_from_basic_fit < 1.5:
+                print(np.sum(bad_fits_s==False),error_from_basic_fit)
+                
+                poly = []
+                poly_fits = []
+                for j in range(self.mask_groups):
+                    segment_fit = np.polyfit(masks_split[j][bad_fits_s[j]],centers_split[j,i][bad_fits_s[j]],1)
+                    res = scipy.optimize.minimize(ifum_utils.miniminize_double_linear_func,
+                                x0 = np.array([segment_fit[0],segment_fit[1],segment_fit[1]]), 
+                                args = np.array([masks_split[j][bad_fits_s[j]],centers_split[j,i][bad_fits_s[j]]]))
+                    y_fit = ifum_utils.double_linear_func(res.x,masks_split[j])
+                    
+                    poly.append(y_fit)
+                    poly_fits.append(centers_split[j,i]-y_fit)
+                    
+                poly = np.array(poly)
+                poly_fits = np.array(poly_fits)
+                full_shifts[i] = poly.flatten()
+            else:
+                print("BAD center")
+                full_shifts[i] = np.nan
+        full_shifts = full_shifts[~np.isnan(full_shifts)].reshape(-1,self.total_masks//2)
+        
+        x = np.arange(0,data.shape[1],1)
+        x_s = np.empty((self.total_masks//2,data.shape[1]))
+        for mask in masks_l:
+            fit = np.polyfit(full_shifts[:,mask-1],full_shifts[:,0]-full_shifts[:,mask-1],2)
+            x_s[mask-1] = x+np.poly1d(fit)(x)
+        
+
+
+        # use mask file to get slightly better intensities
+        # if arc_or_data == "arc":
+        #     maskdir = os.path.join(os.path.relpath("out"),self.arcfilename+self.color+"_mask.fits")
+        #     cmrays = False
+        # else:
+        #     maskdir = os.path.join(os.path.relpath("out"),self.datafilename+self.color+"_mask.fits")
+        #     cmrays = True
+        # mask_data = fits.open(maskdir)[0].data
+
+        # intensities = np.empty((self.total_masks//2,data.shape[1]))
+        # if cmrays:
+        #     cmray_data = fits.open(self.cmraymask)[0].data
+        #     for i,m in enumerate(masks_l):
+        #         a = ifum_utils.get_spectrum_simple(data,mask_data,m,cmray_data)
+        #         intensities[i] = a
+        # else:
+        #     for i,m in enumerate(masks_l):
+        #         a = ifum_utils.get_spectrum_simple(data,mask_data,m)
+        #         intensities[i] = a
 
         save_dict = dict(npzfile)
         save_dict["rect_x"] = x_s
-        save_dict["rect_int"] = intensities
+        # save_dict["rect_int"] = intensities
         np.savez(npzdir, **save_dict)
 
         # print(intensities.shape)
@@ -331,3 +413,23 @@ class Rectify():
         save_dict["rect_wl"] = wl_x
         save_dict["wl_calib"] = full_best_fit
         np.savez(self.trace_data, **save_dict)
+
+    def _viz(self) -> None:
+        npz_data = np.load(self.trace_data)
+        npz_arc = np.load(self.trace_arc)
+
+        data_wls = npz_data["rect_wl"]
+        data_intensities = npz_data["rect_int"]
+        arc_wls = npz_data["rect_wl"]
+        arc_intensities = npz_arc["rect_int"]
+
+        plt.figure(figsize=(50,5))
+        plt.ylabel("intensity")
+        plt.xlabel("wavelength")
+        c = plt.get_cmap("viridis")(np.arange(276)/276)
+        for m in range(276):
+            plt.plot(data_wls[m],ifum_utils.normalize(data_intensities[m]),color=c[m],alpha=0.05)
+        c = plt.get_cmap("magma")(np.arange(276)/276)
+        for m in range(276):
+            plt.plot(arc_wls[m],ifum_utils.normalize(arc_intensities[m]),color=c[m],alpha=0.05)
+        plt.show()

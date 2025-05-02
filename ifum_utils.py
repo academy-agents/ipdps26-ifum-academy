@@ -219,6 +219,16 @@ def get_spectrum_simple(data,data_m,m,data_c=None):
 
     return spectra
 
+def get_spectrum_simple_centerweighted(data,data_m,m,data_c=None):
+    if data_c is None:
+        data_c = np.zeros(data.shape)
+
+    cut_i = np.copy(data)
+    cut_i[(data_m!=m)|(data_c==1)] = np.nan
+    spectra = np.nanmean(cut_i,axis=0)
+
+    return spectra
+
 def get_lag(a,ref_a):
     corr = np.correlate(np.nan_to_num(a),np.nan_to_num(ref_a),mode="full")
     return np.argmax(corr) - (ref_a.size - 1)

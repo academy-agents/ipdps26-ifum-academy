@@ -95,7 +95,7 @@ class Calibrate():
         # plt.show()
 
         # fits.writeto("wl_mask.fits",wl_mask,overwrite=True)
-        fits.writeto("spectrabins.fits",spectra,overwrite=True)
+        # fits.writeto("spectrabins.fits",spectra,overwrite=True)
         
         save_dict = dict(npzdata)
         save_dict["wl_bins"] = bins
@@ -221,7 +221,7 @@ class Calibrate():
         #         plt.plot(wl,full_intensity[m],color="red",alpha=0.05)
         # plt.show()
 
-        # fits.writeto("spectrabins_int.fits",full_intensity,overwrite=True)
+        fits.writeto("spectrabins_int.fits",full_intensity,overwrite=True)
 
         npzdir = os.path.join(os.path.relpath("out"),self.datafilename+"_spectra.npz")
         save_dict = {'wl': wl,
