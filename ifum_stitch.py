@@ -59,9 +59,9 @@ class Stitch():
         for iy, ix in np.ndindex(self.files.shape):
             file = self.files[iy,ix]
             header,data = fits.open(file)[0].header,fits.open(file)[0].data
-            # divides the chip by the gain
+            # accounts for gain
             gain = header["EGAIN"]
-            ordered_data[iy,ix] = data[y1:y2,x1:x2]/gain #CHECK MULTIPL OR DVIIDE
+            ordered_data[iy,ix] = data[y1:y2,x1:x2]/gain
             # subtracts the mean of bias x slices from the data
             ordered_data[iy,ix] = data[y1:y2,x1:x2] - np.repeat(np.array([np.mean(data[y1:y2,x2:],axis=1)]).T,data[y1:y2,x1:x2].shape[1],axis=1)
 
@@ -158,7 +158,7 @@ class Stitch():
         # area is size of returned array
         # cutoff ignores pixels >+/<- that value
         area,cutoff,mult = 150,500,2
-        use = 4
+        use = len(data_files)//2
         sim_files = data_files.copy()
 
         sim_files.remove(self.datafilename)
@@ -169,7 +169,7 @@ class Stitch():
         data = fits.open(os.path.join(os.path.relpath("out"),self.datafilename+self.color+".fits"))[0].data
         
         data_m = np.ones(data.shape)
-        fit_params = np.zeros((len(sim_files),4))
+        fit_params = np.zeros((len(sim_files),use))
         not_sim = []
         for idx,s_file in enumerate(sim_files):
             if len(glob.glob(os.path.join(os.path.relpath("out"),(s_file+"*.fits"))))<2:

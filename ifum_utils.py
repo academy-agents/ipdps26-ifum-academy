@@ -219,13 +219,16 @@ def get_spectrum_simple(data,data_m,m,data_c=None):
 
     return spectra
 
-def get_spectrum_simple_centerweighted(data,data_m,m,data_c=None):
+def get_spectrum_simple_withnan(data,data_m,m,data_c=None):
     if data_c is None:
         data_c = np.zeros(data.shape)
 
     cut_i = np.copy(data)
-    cut_i[(data_m!=m)|(data_c==1)] = np.nan
+    cut_i[(data_m!=m)] = np.nan
     spectra = np.nanmean(cut_i,axis=0)
+
+    cmray_mask = np.any((data_m==m)&(data_c==1),axis=0)
+    spectra[cmray_mask] = np.nan
 
     return spectra
 

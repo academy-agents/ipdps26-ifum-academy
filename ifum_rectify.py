@@ -102,13 +102,20 @@ class Rectify():
         if cmrays:
             cmray_data = fits.open(self.cmraymask)[0].data
             for i,m in enumerate(masks_l):
-                a = ifum_utils.get_spectrum_simple(data,mask_data,m,cmray_data)
+                a = ifum_utils.get_spectrum_simple_withnan(data,mask_data,m,cmray_data)
                 intensities[i] = a
         else:
             for i,m in enumerate(masks_l):
                 a = ifum_utils.get_spectrum_simple(data,mask_data,m)
                 intensities[i] = a
         x = np.arange(data.shape[1])
+
+        # plt.plot(x,intensities[0])
+        # plt.show()
+        # plt.plot(x,intensities[10])
+        # plt.show()
+        # plt.plot(x,intensities[100])
+        # plt.show()
 
         # get centers for each peak area for each mask
         centers_opt = np.zeros_like(centers)
@@ -121,13 +128,19 @@ class Rectify():
                             mask_area = ((x)>(centers[peak][i]-(offset+1)))&((x)<(centers[peak][i]+(offset+1)))    
                             mask_area = mask_area&(~np.isnan(intensities[i]))
                             p0 = [0,np.max(intensities[i][mask_area]),np.argmax(intensities[i][mask_area])+np.min(x[mask_area]),offset/3]
-                            popt,_ = scipy.optimize.curve_fit(ifum_utils.gauss,x[mask_area],intensities[i][mask_area],p0=p0)                            
+                            popt,pcov = scipy.optimize.curve_fit(ifum_utils.gauss,x[mask_area],intensities[i][mask_area],p0=p0)                            
                         else:
                             mask_area = x>((~np.isnan(intensities[i])).cumsum(0).argmax(0)-offset*2)
                             mask_area = mask_area&(~np.isnan(intensities[i]))
                             p0 = [0,np.max(intensities[i][mask_area]),np.argmax(intensities[i][mask_area])+np.min(x[mask_area]),offset/3]
-                            popt,_ = scipy.optimize.curve_fit(ifum_utils.gauss,x[mask_area],intensities[i][mask_area],p0=p0)
-                        centers_opt[peak][i] = popt[2]
+                            popt,pcov = scipy.optimize.curve_fit(ifum_utils.gauss,x[mask_area],intensities[i][mask_area],p0=p0)
+                        x_err = np.sqrt(np.diag(pcov))[3]
+                        
+                        if x_err < np.median(np.poly1d(traces_sigma[int(mask-1)])(np.arange(data.shape[0])))/3:
+                            centers_opt[peak][i] = popt[2]
+                        else:
+                            # keep old peak (maybe nan?)
+                            centers_opt[peak][i] = centers[peak][i]
                     except:
                         # print(f"bad 1D peak fit: color {self.color}, mask {mask}, peak {peak}")
                         centers_opt[peak][i] = np.nan
@@ -167,7 +180,6 @@ class Rectify():
             # bad_fits = bad_fits&(abs((centers[i]-(np.poly1d(np.polyfit(masks_l[bad_fits],centers[i][bad_fits],2))(masks_l))))<3)
             error_from_basic_fit = np.nanmean((centers[i] - np.poly1d(np.polyfit(masks_l[bad_fits],centers[i][bad_fits],3))(masks_l))**2)
             bad_fits_s = np.array(np.split(bad_fits,self.mask_groups))
-
             # plt.figure(figsize=(8,3))
             # plt.title(error_from_basic_fit)
             # plt.scatter(masks_l,centers[i],color="red")
@@ -176,8 +188,9 @@ class Rectify():
             # plt.show()
 
             # mse is usually <1, if it's this large, something is wrong in the centers
-            if error_from_basic_fit < 1.5:
-                print(np.sum(bad_fits_s==False),error_from_basic_fit)
+            # if more than len(bad_masks) are found to be bad fits, skip this emission line too
+            if error_from_basic_fit < 1.5 and np.all(np.sum(~bad_fits_s, axis=1) <= len(self.bad_mask)):
+                # print(np.sum(bad_fits_s==False),error_from_basic_fit,np.sum(~bad_fits_s, axis=1))
                 
                 poly = []
                 poly_fits = []
@@ -195,7 +208,7 @@ class Rectify():
                 poly_fits = np.array(poly_fits)
                 full_shifts[i] = poly.flatten()
             else:
-                print("BAD center")
+                print("BAD emission line")
                 full_shifts[i] = np.nan
         full_shifts = full_shifts[~np.isnan(full_shifts)].reshape(-1,self.total_masks//2)
         
@@ -270,15 +283,15 @@ class Rectify():
                 for i,line in enumerate(self.sky_lines):
                     mask_area = ((data_xs[m-1])>(sky_lines_guess[i]-offset))&((data_xs[m-1])<(sky_lines_guess[i]+offset))
                     mask_area = mask_area&(~np.isnan(data_intensities[m-1]))
-                    p0 = [0,np.nanmax(data_intensities[m-1][mask_area]),np.argmax(data_intensities[m-1][mask_area])+np.nanmin(data_xs[m-1][mask_area]),5/3]
                     try:
+                        p0 = [0,np.nanmax(data_intensities[m-1][mask_area]),np.argmax(data_intensities[m-1][mask_area])+np.nanmin(data_xs[m-1][mask_area]),5/3]
                         popt,pcov = scipy.optimize.curve_fit(ifum_utils.gauss,data_xs[m-1][mask_area],data_intensities[m-1][mask_area],p0=p0)
                         perr = np.sqrt(np.diag(pcov))
                         gauss_x = np.linspace(data_xs[m-1][mask_area][0],data_xs[m-1][mask_area][-1],100)
                         sky_lines_x.append(popt[2])
                         sky_lines_err.append(perr[2])
                     except:
-                        print("BAD FIT")
+                        # print("BAD PEAK FIT")
                         sky_lines_x.append(0)
                         sky_lines_err.append(np.inf)
 

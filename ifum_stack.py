@@ -150,11 +150,11 @@ class Stack():
             data_cubes.append(npzdata["datacube_ss"])
 
         ref_im = np.nanmedian(data_cubes[0],axis=0)
-        ref_im = ifum_utils.standardize(np.nan_to_num(ref_im,np.nanmedian(ref_im)))
+        ref_im = ifum_utils.normalize(np.nan_to_num(ref_im,np.nanmedian(ref_im)))
         shifts = [[0,0]]
         for data_cube in data_cubes[1:]:
             im = np.nanmedian(data_cube,axis=0)
-            im = ifum_utils.standardize(np.nan_to_num(im,np.nanmedian(im)))
+            im = ifum_utils.normalize(np.nan_to_num(im,np.nanmedian(im)))
             shift = ifum_utils.get_lag_2d(ref_im,im)
             shifts.append(shift)
 
