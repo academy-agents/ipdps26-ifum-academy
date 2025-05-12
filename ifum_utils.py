@@ -63,18 +63,25 @@ def get_x_from_point(px, trace_poly, rotation_poly) -> float:
     return x_intercept
 
 def get_x_from_point_simple(px, trace_poly, rotation_poly) -> float:
-    ys,xs = px[:,0],px[:,1]
+    if np.isnan(rotation_poly):
+        return px[:,1]
+    else:
+        ys,xs = px[:,0],px[:,1]
 
-    rot_m = np.tan(np.pi/2+np.poly1d(rotation_poly)(xs))
-    rot_b = ys-rot_m*xs
+        rot_m = np.tan(np.pi/2+np.poly1d(rotation_poly)(xs))
+        rot_b = ys-rot_m*xs
 
-    y0 = np.polyval(trace_poly, xs)
-    trace_m = np.polyval(np.polyder(trace_poly), xs)
-    trace_b = y0-trace_m*xs
+        y0 = np.polyval(trace_poly, xs)
+        trace_m = np.polyval(np.polyder(trace_poly), xs)
+        trace_b = y0-trace_m*xs
 
-    return (trace_b-rot_b)/(rot_m-trace_m)
+        return (trace_b-rot_b)/(rot_m-trace_m)
 
 def get_spectrum_fluxbins(mask, bins, traces, rotations, stds, sig_mult, x_s, wl_calib, data, cmray_mask, rand_dots=50) -> np.ndarray:
+    if np.isnan(rotations):
+        use_rot = False
+    else:
+        use_rot = True
     # first, compute bin edges from bins
     midpoints = 0.5 * (bins[1:] + bins[:-1])
     bin_edges = np.concatenate(([bins[0]-0.5*(bins[1]-bins[0])],
@@ -92,7 +99,10 @@ def get_spectrum_fluxbins(mask, bins, traces, rotations, stds, sig_mult, x_s, wl
     data[cmray_mask==1] = np.nan
 
     # compute x_intercepts and wavelengths for all pixels
-    x_intercepts = get_x_from_point_simple(pixels, traces[mask], rotations[mask])
+    if use_rot:
+        x_intercepts = get_x_from_point_simple(pixels, traces[mask], rotations[mask])
+    else:
+        x_intercepts = get_x_from_point_simple(pixels, traces[mask], np.nan)
     # use rectify to shift x_intercepts for proper calibration
     x_intercepts = np.interp(x_intercepts,np.arange(data.shape[1]),x_s[mask])
     wls = np.poly1d(wl_calib)(x_intercepts)
@@ -142,7 +152,10 @@ def get_spectrum_fluxbins(mask, bins, traces, rotations, stds, sig_mult, x_s, wl
     y_points_all = np.concatenate(y_points_all)
     # get x-intercepts for batch
     points_all = np.column_stack((y_points_all,x_points_all))
-    x_intercepts_all = get_x_from_point_simple(points_all,traces[mask],rotations[mask])
+    if use_rot:
+        x_intercepts_all = get_x_from_point_simple(points_all,traces[mask],rotations[mask])
+    else:
+        x_intercepts_all = get_x_from_point_simple(points_all,traces[mask],np.nan)
     x_intercepts_all = np.interp(x_intercepts_all,np.arange(data.shape[1]),x_s[mask])
     
     # batch wavelength and histogram calculation
@@ -166,7 +179,7 @@ def get_spectrum_fluxbins(mask, bins, traces, rotations, stds, sig_mult, x_s, wl
     # bins without wavelength become nan
     spectrum[spectrum==0] = np.nan
 
-    # plt.figure(figsize=(300,10))
+    # plt.figure()
     # plt.plot(bins,spectrum)
     # plt.show()
 
@@ -364,10 +377,9 @@ def sigma_clip(x,y,deg,weight,sigma=1,iter=10,include=0.25):
         mult = 1
         polymask = y<(np.poly1d(fit)(x)+mult*sigma*np.nanstd(np.poly1d(fit)(x)))
         polymask &= y>(np.poly1d(fit)(x)-mult*sigma*np.nanstd(np.poly1d(fit)(x)))
-        while np.sum(polymask)/len(x) < include:
-            mult += 1
-            polymask = y<(np.poly1d(fit)(x)+mult*sigma*np.nanstd(np.poly1d(fit)(x)))
-            polymask &= y>(np.poly1d(fit)(x)-mult*sigma*np.nanstd(np.poly1d(fit)(x)))
+        if np.sum(polymask)/len(x) < include:
+            polymask = np.array([True]*round(0.75*len(polymask))+[False]*round(0.25*len(polymask)))
+            np.random.shuffle(polymask)
         
         fit = np.polyfit(x[polymask],y[polymask],deg,w=weight[polymask])
 

@@ -4,6 +4,7 @@ import os
 from astropy.io import fits
 from scipy import ndimage
 from astropy.convolution import Gaussian2DKernel, convolve
+import re
 
 class Stitch():
     '''
@@ -50,20 +51,25 @@ class Stitch():
         else:
             self.files = ordered_files
 
-    def save_file(self) -> None:
+    def save_file(self,bin_to_2x1=True) -> None:
         # assumes constant trim section
-        x1,x2 = 0,1024
-        y1,y2 = 0,2056
+        # x1,x2 = 0,1024
+        # y1,y2 = 0,2056
         
         ordered_data = np.empty((2,4), dtype="object")
         for iy, ix in np.ndindex(self.files.shape):
             file = self.files[iy,ix]
             header,data = fits.open(file)[0].header,fits.open(file)[0].data
+            x1,x2,y1,y2 = [int(s) for s in re.findall(r'\d+', header["TRIMSEC"])]
+            x1 -= 1
+            y1 -= 1
             # accounts for gain
             gain = header["EGAIN"]
-            ordered_data[iy,ix] = data[y1:y2,x1:x2]/gain
+            # ordered_data[iy,ix] = data[y1:y2,x1:x2]/gain
             # subtracts the mean of bias x slices from the data
             ordered_data[iy,ix] = data[y1:y2,x1:x2] - np.repeat(np.array([np.mean(data[y1:y2,x2:],axis=1)]).T,data[y1:y2,x1:x2].shape[1],axis=1)
+            if bin_to_2x1 and header["BINNING"]=='1x1':
+                ordered_data[iy,ix] = ordered_data[iy,ix][:,0::2]+ordered_data[iy,ix][:,1::2]
 
         # stack images
         total_b = np.vstack((np.hstack((ordered_data[0][3],np.flip(ordered_data[0][2], axis=1))),
@@ -158,7 +164,10 @@ class Stitch():
         # area is size of returned array
         # cutoff ignores pixels >+/<- that value
         area,cutoff,mult = 150,500,2
-        use = len(data_files)//2
+        if len(data_files)>4:
+            use = len(data_files)//2
+        else:
+            use = len(data_files)-1
         sim_files = data_files.copy()
 
         sim_files.remove(self.datafilename)
@@ -169,7 +178,7 @@ class Stitch():
         data = fits.open(os.path.join(os.path.relpath("out"),self.datafilename+self.color+".fits"))[0].data
         
         data_m = np.ones(data.shape)
-        fit_params = np.zeros((len(sim_files),use))
+        fit_params = np.zeros((len(sim_files),4))
         not_sim = []
         for idx,s_file in enumerate(sim_files):
             if len(glob.glob(os.path.join(os.path.relpath("out"),(s_file+"*.fits"))))<2:
@@ -198,7 +207,6 @@ class Stitch():
 
         sim_files = [k for l, k in enumerate(sim_files) if l not in not_sim]
         fit_params = np.delete(fit_params, (not_sim), axis=0)
-        assert use <= len(sim_files)
         added_data = np.zeros(data.shape)
         best_ = np.array(np.argsort(fit_params[:,3])[:use].astype(int))
         for idx in best_:
@@ -210,5 +218,5 @@ class Stitch():
 
         gauss_kernal = Gaussian2DKernel(x_stddev=1,y_stddev=1)
         cmray_conv = convolve(added_data,gauss_kernal)
-        cmray_conv_mask = (cmray_conv>(np.mean(cmray_conv.flatten())+2*np.std(cmray_conv.flatten())))
+        cmray_conv_mask = (cmray_conv>(np.median(cmray_conv.flatten())+3*np.std(cmray_conv.flatten())))
         fits.writeto(os.path.join(os.path.relpath("out"),self.datafilename+self.color+"_cmray_mask.fits"), data=1.*cmray_conv_mask, overwrite=True)

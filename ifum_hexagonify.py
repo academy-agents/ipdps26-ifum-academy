@@ -132,10 +132,19 @@ def get_hex_lattice_centers(x_hexes,y_hexes,s,f,off_pos):
             center = [x*spacings[0]+start[0],offset*(x%2)*0.5*spacings[1]+y*spacings[1]+start[1]] if f else [offset*(y%2)*0.5*spacings[0]+x*spacings[0]+start[0],y*spacings[1]+start[1]]
             centers.append(center)
 
+
+    real_map = np.arange(x_hexes*y_hexes)
+
+    for i in range(x_hexes,len(real_map),2*x_hexes):
+        real_map[i:i+x_hexes] = real_map[i:i+x_hexes][::-1]
+    centers = np.array(centers)[real_map]
+    
     # TEMPORARY re-order
-    import pandas as pd
-    real_map = pd.read_csv(r"C:\Users\daniel\Downloads\aperture_map.csv")
-    centers = np.array(centers)[real_map.ccd_aper-1]
+    # import pandas as pd
+    # real_map = pd.read_csv(r"C:\Users\daniel\Downloads\aperture_map.csv")
+    # reverse every set of x_hexes 
+    # print(real_map.ccd_aper[:26])
+    # centers = np.array(centers)[real_map.ccd_aper-1]
     #############################################################3
     
     return width,height,centers.reshape((x_hexes,y_hexes,2))

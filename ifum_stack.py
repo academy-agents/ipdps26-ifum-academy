@@ -23,7 +23,7 @@ class Stack():
     Methods:
         
     '''
-    def __init__(self, datafilenames: list, bad_masks, total_masks: int, mask_groups: int, wcs_stars: np.ndarray):
+    def __init__(self, datafilenames: list, bad_masks, total_masks: int, mask_groups: int, wcs_stars: np.ndarray, hex_dims):
         self.datafilenames = datafilenames
         self.npzfiles = []
         for datafilename in self.datafilenames:
@@ -33,8 +33,8 @@ class Stack():
         self.mask_groups = mask_groups
         self.wcs_stars = wcs_stars
 
-        self.run_params = {"x_hexes": 23,
-                        "y_hexes": 24,
+        self.run_params = {"x_hexes": hex_dims[0],
+                        "y_hexes": hex_dims[1],
                         "f": False,
                         "off_pos": True,
                         "pixels": 99,
