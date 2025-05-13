@@ -165,79 +165,127 @@ class Calibrate():
 
         return np.array(sky_ints),np.array(sky_errs)
     
-    def intensity_corr(self,deg=1) -> None:
-        sky_ints,sky_errs = np.empty((0,len(self.isol_sky_lines))),np.empty((0,len(self.isol_sky_lines)))
-        for color_idx,color in enumerate(["b","r"]):
-            _,_,_,_,trace_data,_,_,bad_mask = self.get_color_info(color)
-            npzdata = np.load(trace_data)
-            shape = npzdata["wl_bins"].shape[0]
-            sky_int,sky_err = self.get_sky_weights(npzdata["wl_bins"],npzdata["flux_bins"],bad_mask)
-            sky_ints = np.vstack((sky_ints,sky_int))
-            sky_errs = np.vstack((sky_errs,sky_err))
-        avg_sky = np.average(sky_int,axis=0,weights=1./sky_err)
-        # avg_sig = np.mean(sky_err[np.isfinite(sky_err)])
-        
-        full_intensity = np.empty((0,shape))
-        for color_idx,color in enumerate(["b","r"]):
-            _,_,_,_,trace_data,_,_,bad_mask = self.get_color_info(color)
-            npzdata = np.load(trace_data)
-            intensity = npzdata["flux_bins"]
-            wl = npzdata["wl_bins"]
-            for m in np.arange(self.total_masks//2):
-                if m not in bad_mask:
-                    try:
-                        if color == "r":
-                            c_m = int(m+self.total_masks//2)
-                        else:
-                            c_m = m
-                        sky_int = np.array(sky_ints[c_m])
-                        sky_err = np.array(sky_errs[c_m])
-                        # mask0 = (sky_int!=0)&(np.isfinite(sky_err))
-                        ratio = avg_sky/sky_int
-                        # ratio shouldn't be extremely high or low
-                        mask0 = (ratio<(np.nanmedian(ratio)+3*np.nanstd(ratio[np.isfinite(ratio)])))&(ratio>(np.nanmedian(ratio)-3*np.nanstd(ratio[np.isfinite(ratio)])))&(ratio!=0)&(np.isfinite(ratio))
-                        ratio = ratio[mask0]
-                        w_ = np.nan_to_num(1/np.array(sky_err)[mask0],nan=0)
-                        # int_fit_ = np.polyfit(self.isol_sky_lines[mask0],ratio,deg,w=w_)
+    def intensity_corr(self,deg=1,use_flat=False) -> None:
+        if use_flat:
+            _,_,_,_,trace_data,_,traces_dir,bad_mask = self.get_color_info("b")
+            flat_traces = np.load(traces_dir)
+            avg_sky = np.nanmean(flat_traces["amps"],axis=1) # THIS IS ONLY ONE MASK FROM BLUE
 
-                        # plt.scatter(self.isol_sky_lines[mask0],ratio,c=ifum_utils.normalize(w_))
-                        # plt.show()
+            for color_idx,color in enumerate(["b","r"]):
+                _,_,_,_,trace_data,_,traces_dir,bad_mask = self.get_color_info(color)
+                flat_traces = np.load(traces_dir)
+                npzdata = np.load(trace_data)
+                shape = npzdata["wl_bins"].shape[0]
+                wl = npzdata["wl_bins"]
+                intensity = npzdata["flux_bins"]
+                full_intensity = np.empty((0,shape))
 
-                        # diff = ratio-np.poly1d(int_fit_)(self.isol_sky_lines[mask0])
-                        # mask = (ratio<(np.poly1d(int_fit_)(self.isol_sky_lines[mask0])+1.5*np.std(diff)))&(ratio>(np.poly1d(int_fit_)(self.isol_sky_lines[mask0])-1.5*np.std(diff)))
-                        # w = np.nan_to_num(1/np.array(sky_errs[c_m])[mask0][mask],nan=0)
-                        # int_fit = np.polyfit(self.isol_sky_lines[mask0][mask],ratio[mask],deg,w=w)
+                plt.scatter(flat_traces["x"],avg_sky,color="black")
+                for i in range(self.total_masks//2):
+                    plt.scatter(flat_traces["x"],flat_traces["amps"][:,i],alpha=0.2)
+                plt.show()
 
-                        if deg == 0:
-                            fit_mask,int_fit = ifum_utils.sigma_clip(self.isol_sky_lines[mask0],ratio,deg,w_,sigma=1.0)
-                        else:
-                            fit_mask,int_fit = ifum_utils.sigma_clip(self.isol_sky_lines[mask0],ratio,deg-1,w_,sigma=3.0)
-                            # plt.scatter(self.isol_sky_lines[mask0],ratio,c=ifum_utils.normalize(w_))
-                            # plt.scatter(self.isol_sky_lines[mask0][fit_mask],ratio[fit_mask],c="red",marker="x",alpha=0.5)
-                            # plt.show()
+                for m in np.arange(self.total_masks//2):
+                    if m not in bad_mask:
+                        try:
+                            if color == "r":
+                                c_m = int(m+self.total_masks//2)
+                            else:
+                                c_m = m
 
-                            fit_mask_,int_fit = ifum_utils.sigma_clip(self.isol_sky_lines[mask0][fit_mask],ratio[fit_mask],deg,w_[fit_mask],sigma=1.0)
-                            # plt.scatter(self.isol_sky_lines[mask0][fit_mask],ratio[fit_mask],c=ifum_utils.normalize(w_[fit_mask]))
-                            # plt.scatter(self.isol_sky_lines[mask0][fit_mask][fit_mask_],ratio[fit_mask][fit_mask_],c="red",marker="x",alpha=0.5)
-                            # plt.plot(self.isol_sky_lines[mask0][fit_mask],np.poly1d(int_fit)(self.isol_sky_lines[mask0][fit_mask]),c="red")
-                            # plt.show()
-                    
-                        full_intensity = np.vstack((full_intensity,np.poly1d(int_fit)(wl)*intensity[m]))
-                        # full_intensity[c_m] = np.poly1d(int_fit)(wl)*intensity[m]
-                    except:
-                        print("error in intensity fit")
+                            ratio = avg_sky/flat_traces["amps"][:,c_m]
+                            mask0 = (ratio<(np.nanmedian(ratio)+3*np.nanstd(ratio[np.isfinite(ratio)])))&(ratio>(np.nanmedian(ratio)-3*np.nanstd(ratio[np.isfinite(ratio)])))&(ratio!=0)&(np.isfinite(ratio))
+                            
+                            plt.scatter(flat_traces["x"],ratio,color="red")
+                            plt.scatter(flat_traces["x"][mask0],ratio[mask0],color="orange")
+
+                            int_fit, int_mask = ifum_utils.ransac(flat_traces["x"][mask0],ratio[mask0],deg,max_iter=1000,threshold=0.1)
+                            plt.scatter(flat_traces["x"][mask0][int_mask],ratio[mask0][int_mask],color="green")
+                            plt.plot(np.arange(2048),np.poly1d(int_fit)(np.arange(2048)),color="gold")
+
+                            plt.show()
+                        
+                            full_intensity = np.vstack((full_intensity,np.poly1d(int_fit)(wl)*intensity[m]))
+                        except:
+                            print("error in intensity fit")
+                            full_intensity = np.vstack((full_intensity,np.repeat(np.nan,shape)))
+                    else:
                         full_intensity = np.vstack((full_intensity,np.repeat(np.nan,shape)))
-                else:
-                    full_intensity = np.vstack((full_intensity,np.repeat(np.nan,shape)))
-                    # full_intensity[c_m] = np.nan
 
-        # plt.figure(figsize=(300,10))
-        # for m in np.arange(self.total_masks):
-        #     if m<276:
-        #         plt.plot(wl,full_intensity[m],color="blue",alpha=0.05)
-        #     else:
-        #         plt.plot(wl,full_intensity[m],color="red",alpha=0.05)
-        # plt.show()
+
+        else:
+            sky_ints,sky_errs = np.empty((0,len(self.isol_sky_lines))),np.empty((0,len(self.isol_sky_lines)))
+            for color_idx,color in enumerate(["b","r"]):
+                _,_,_,_,trace_data,_,_,bad_mask = self.get_color_info(color)
+                npzdata = np.load(trace_data)
+                shape = npzdata["wl_bins"].shape[0]
+                sky_int,sky_err = self.get_sky_weights(npzdata["wl_bins"],npzdata["flux_bins"],bad_mask)
+                sky_ints = np.vstack((sky_ints,sky_int))
+                sky_errs = np.vstack((sky_errs,sky_err))
+            avg_sky = np.average(sky_int,axis=0,weights=1./sky_err)
+            # avg_sig = np.mean(sky_err[np.isfinite(sky_err)])
+            
+            full_intensity = np.empty((0,shape))
+            for color_idx,color in enumerate(["b","r"]):
+                _,_,_,_,trace_data,_,_,bad_mask = self.get_color_info(color)
+                npzdata = np.load(trace_data)
+                intensity = npzdata["flux_bins"]
+                wl = npzdata["wl_bins"]
+                for m in np.arange(self.total_masks//2):
+                    if m not in bad_mask:
+                        try:
+                            if color == "r":
+                                c_m = int(m+self.total_masks//2)
+                            else:
+                                c_m = m
+                            sky_int = np.array(sky_ints[c_m])
+                            sky_err = np.array(sky_errs[c_m])
+                            # mask0 = (sky_int!=0)&(np.isfinite(sky_err))
+                            ratio = avg_sky/sky_int
+                            # ratio shouldn't be extremely high or low
+                            mask0 = (ratio<(np.nanmedian(ratio)+3*np.nanstd(ratio[np.isfinite(ratio)])))&(ratio>(np.nanmedian(ratio)-3*np.nanstd(ratio[np.isfinite(ratio)])))&(ratio!=0)&(np.isfinite(ratio))
+                            ratio = ratio[mask0]
+                            w_ = np.nan_to_num(1/np.array(sky_err)[mask0],nan=0)
+                            # int_fit_ = np.polyfit(self.isol_sky_lines[mask0],ratio,deg,w=w_)
+
+                            # plt.scatter(self.isol_sky_lines[mask0],ratio,c=ifum_utils.normalize(w_))
+                            # plt.show()
+
+                            # diff = ratio-np.poly1d(int_fit_)(self.isol_sky_lines[mask0])
+                            # mask = (ratio<(np.poly1d(int_fit_)(self.isol_sky_lines[mask0])+1.5*np.std(diff)))&(ratio>(np.poly1d(int_fit_)(self.isol_sky_lines[mask0])-1.5*np.std(diff)))
+                            # w = np.nan_to_num(1/np.array(sky_errs[c_m])[mask0][mask],nan=0)
+                            # int_fit = np.polyfit(self.isol_sky_lines[mask0][mask],ratio[mask],deg,w=w)
+
+                            if deg == 0:
+                                fit_mask,int_fit = ifum_utils.sigma_clip(self.isol_sky_lines[mask0],ratio,deg,w_,sigma=1.0)
+                            else:
+                                fit_mask,int_fit = ifum_utils.sigma_clip(self.isol_sky_lines[mask0],ratio,deg-1,w_,sigma=3.0)
+                                # plt.scatter(self.isol_sky_lines[mask0],ratio,c=ifum_utils.normalize(w_))
+                                # plt.scatter(self.isol_sky_lines[mask0][fit_mask],ratio[fit_mask],c="red",marker="x",alpha=0.5)
+                                # plt.show()
+
+                                fit_mask_,int_fit = ifum_utils.sigma_clip(self.isol_sky_lines[mask0][fit_mask],ratio[fit_mask],deg,w_[fit_mask],sigma=1.0)
+                                # plt.scatter(self.isol_sky_lines[mask0][fit_mask],ratio[fit_mask],c=ifum_utils.normalize(w_[fit_mask]))
+                                # plt.scatter(self.isol_sky_lines[mask0][fit_mask][fit_mask_],ratio[fit_mask][fit_mask_],c="red",marker="x",alpha=0.5)
+                                # plt.plot(self.isol_sky_lines[mask0][fit_mask],np.poly1d(int_fit)(self.isol_sky_lines[mask0][fit_mask]),c="red")
+                                # plt.show()
+                        
+                            full_intensity = np.vstack((full_intensity,np.poly1d(int_fit)(wl)*intensity[m]))
+                            # full_intensity[c_m] = np.poly1d(int_fit)(wl)*intensity[m]
+                        except:
+                            print("error in intensity fit")
+                            full_intensity = np.vstack((full_intensity,np.repeat(np.nan,shape)))
+                    else:
+                        full_intensity = np.vstack((full_intensity,np.repeat(np.nan,shape)))
+                        # full_intensity[c_m] = np.nan
+
+        plt.figure(figsize=(300,10))
+        for m in np.arange(self.total_masks):
+            if m<276:
+                plt.plot(wl,full_intensity[m],color="blue",alpha=0.05)
+            else:
+                plt.plot(wl,full_intensity[m],color="red",alpha=0.05)
+        plt.show()
 
         fits.writeto("spectrabins_int.fits",full_intensity,overwrite=True)
 

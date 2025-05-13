@@ -193,7 +193,7 @@ class Rectify():
                                 "Be": [#4407.935,
                                         #   4572.66605
                                         ],
-                                "Li": [4132.56,
+                                "Li": [#4132.56,
                                         #   4273.07,
                                         #   4602.83,
                                         #   4971.66,
@@ -256,15 +256,14 @@ class Rectify():
         # plt.show()
 
         # sometimes centers are sparse. this fixes this
-        # TEMP: fix_sparse overwrites existing centers
         if fix_sparse:
             # get first lag, so that quadrant areas are optimized
             lags_0 = np.empty(intensities.shape[0])
             for i,intensity in enumerate(intensities):
                 lags_0[i] = ifum_utils.get_lag(intensity,intensities[0])
-            quadrants = 6
-            expectation = centers.shape[0]//quadrants+1
-            centers = np.empty((0,centers.shape[1]))
+            quadrants = 4
+            expectation = (centers.shape[0]//quadrants)*2 # right now, doubles!
+            # centers = np.empty((0,centers.shape[1]))
             # print(centers.shape)
             # print(intensities.shape)
             quadrants_x = np.array_split(x,quadrants)
@@ -294,11 +293,11 @@ class Rectify():
                                                       distance=np.nanmean(traces_sigma)*sig_mult)
 
                     peaks += quad_mask[0]
-                    # nearby_idxs = []
-                    # for ctr in centers_nearby:
-                    #     if np.abs(peaks[(np.abs(peaks - ctr)).argmin()]-ctr)<np.nanmean(traces_sigma)*sig_mult:
-                    #         nearby_idxs.append((np.abs(peaks - ctr)).argmin())
-                    # peaks = np.delete(peaks,nearby_idxs)
+                    nearby_idxs = []
+                    for ctr in centers_nearby:
+                        if np.abs(peaks[(np.abs(peaks - ctr)).argmin()]-ctr)<np.nanmean(traces_sigma)*sig_mult:
+                            nearby_idxs.append((np.abs(peaks - ctr)).argmin())
+                    peaks = np.delete(peaks,nearby_idxs)
 
                     for peak in peaks:
                         plt.axvline(peak,color="red")
@@ -516,7 +515,7 @@ class Rectify():
         npzdir1 = self.trace_arc if type1=="arc" else self.trace_data
         npzfile1 = np.load(npzdir1)
         
-        npzdir2 = self.trace_data if type1=="data" else self.trace_arc
+        npzdir2 = self.trace_data if type2=="data" else self.trace_arc
         npzfile2 = np.load(npzdir2)
         
         save_dict = dict(npzfile2)
@@ -524,7 +523,7 @@ class Rectify():
         np.savez(npzdir2, **save_dict)
 
 
-    def calib(self,sig_mult=3,use_sky=True) -> None:
+    def calib(self,sig_mult=3,use_sky=True,deg=4) -> None:
         npz_data = np.load(self.trace_data)
         npz_arc = np.load(self.trace_arc)
         traces_sigma = np.load(self.trace_flat)["traces_sigma"]
@@ -584,7 +583,7 @@ class Rectify():
             best_fit = np.polyfit(self.sky_lines,centers,3,w=stds)
             arc_lines_x0 = np.poly1d(best_fit)(self.clear_emission_lines)
         else:
-            best_fit = np.polyfit(self.sky_lines,self.sky_lines_guess_,3)
+            best_fit = np.polyfit(self.sky_lines,sky_lines_guess,3)
             arc_lines_x0 = np.poly1d(best_fit)(self.clear_emission_lines)
         # TEMP: get a slightly better best_fit
         # best_arc_lines = [4921.9313,5015.6783,5875.621]
@@ -730,7 +729,8 @@ class Rectify():
         full_stds = full_stds[mask]
         full_stds = np.nan_to_num(full_stds)
 
-        full_best_fit = np.polyfit(full_centers,full_wls,5)#,w=full_stds)
+        # full_best_fit = np.polyfit(full_centers,full_wls,3)#,w=full_stds)
+        full_best_fit, _ = ifum_utils.ransac(full_centers,full_wls,deg,max_iter=1000,threshold=0.05)
 
         plt.figure().set_facecolor("lightgray")
         # plt.title(f"{data_filename+color} RESIDUALS")
@@ -762,9 +762,9 @@ class Rectify():
         npz_data = np.load(self.trace_data)
         npz_arc = np.load(self.trace_arc)
 
-        data_wls = npz_data["rect_x"]
+        data_wls = npz_data["rect_wl"]
         data_intensities = npz_data["rect_int"]
-        arc_wls = npz_data["rect_x"]
+        arc_wls = npz_data["rect_wl"]
         arc_intensities = npz_arc["rect_int"]
 
         # print(arc_wls.shape,arc_intensities.shape)
@@ -778,7 +778,7 @@ class Rectify():
         c = plt.get_cmap("magma")(np.arange(276)/276)
         for m in range(276):
             plt.plot(arc_wls[m],ifum_utils.normalize(arc_intensities[m]),color=c[m],alpha=0.05)
-        plt.show()
+        # plt.show()
 
     def _viz_wl(self,prelim_calib=None) -> None:
         arc_data = fits.open(self.arcdir)[0].data

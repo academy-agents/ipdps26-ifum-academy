@@ -4,7 +4,10 @@ from astropy.io import fits
 import scipy
 import math
 import matplotlib.pyplot as plt
+import scipy.optimize
 import ifum_utils
+
+from sklearn.cluster import DBSCAN
 
 class Mask():
     '''
@@ -33,9 +36,10 @@ class Mask():
 
         expected_peaks = int(self.total_masks//2-len(self.bad_mask))
 
-        x = np.arange(0,flat_data.shape[1],3)
+        x = np.arange(0,flat_data.shape[1],3) # sample every 3rd pixel, will speed things up!
+        all_peaks = np.array([])
+        all_x = np.array([])
         mask_peaks = np.empty(shape=(len(x),expected_peaks))
-        mask_polys_0 = np.empty(shape=(expected_peaks,deg))
         mask_polys = np.empty(shape=(expected_peaks,deg+1))
 
         num_det_peaks = []
@@ -55,6 +59,10 @@ class Mask():
                                               distance=len(y)/self.total_masks/2,
                                               width=[len(y)/self.total_masks/2,len(y)/self.total_masks*2])
             
+            # append all peaks for later
+            all_peaks = np.append(all_peaks,peaks)
+            all_x = np.append(all_x,np.repeat(idx,len(peaks)))
+
             # take top (# of expected peaks) to include
             num_det_peaks.append(len(peaks))
             if len(peaks) >= expected_peaks:
@@ -63,10 +71,42 @@ class Mask():
                 mask_peaks[i,:] = np.sort(peaks)
             else:
                 mask_peaks[i,:] = np.nan
+
         # print(np.mean(num_det_peaks))
         # print(np.median(num_det_peaks))
         # plt.hist(num_det_peaks)
         # plt.show()
+
+        all_peaks_flat = np.column_stack([all_x,all_peaks])
+
+        threshold = 1.5
+        pot_bad_masks = []
+        for i,mask_dots in enumerate(mask_peaks.T):
+            nanmask = ~np.isnan(mask_dots)
+            best_fit, best_mask = ifum_utils.ransac(x[nanmask],mask_dots[nanmask],deg,max_iter=1000,threshold=threshold)
+
+            # optimize using all detected peaks
+            distances = np.abs(all_peaks_flat[:,1] - np.poly1d(best_fit)(all_peaks_flat[:,0]))
+            all_mask = distances < threshold*1.5 #expand a bit
+            better_fit = np.polyfit(all_peaks_flat[:,0][all_mask],all_peaks_flat[:,1][all_mask],deg)
+            better_fit_std = np.std(all_peaks_flat[:,1][all_mask]-np.poly1d(better_fit)(all_peaks_flat[:,0][all_mask]))
+
+            mask_polys[i] = better_fit
+            
+            if better_fit_std>threshold:
+                pot_bad_masks.append(i)
+
+                plt.scatter(x,mask_dots,color="red")
+                plt.scatter(x[best_mask],mask_dots[best_mask],color="green")
+                plt.plot(x,np.poly1d(best_fit)(x),color="darkorange",alpha=0.5,ls=":")
+                plt.scatter(all_peaks_flat[:,0][all_mask],all_peaks_flat[:,1][all_mask],color="brown",marker="x",alpha=0.5)
+
+                plt.title(better_fit_std)
+                plt.plot(x,np.poly1d(better_fit)(x),color="gold")
+                plt.show()
+
+        for pot_bad in pot_bad_masks:
+            print("potentially bad fit:",pot_bad)
 
         # "repair" the mask dots to better match neighbors
         # # # plt.figure(figsize=(100,10))
@@ -123,7 +163,7 @@ class Mask():
         #             (mask_peaks.T)[i:,col] = np.roll((mask_peaks.T)[i:,col], shift=1)
 
         # attempt repair????
-        max_dist = 3 # adjacent pixel diff (this is high)
+        # max_dist = 3 # adjacent pixel diff (this is high)
         # for i,mask_dots in enumerate(mask_peaks.T):
         #     if i!=(len(mask_peaks.T)-1):
         #         diff = np.concatenate(([0],np.diff((mask_peaks.T)[i])))
@@ -141,27 +181,27 @@ class Mask():
         #     bad_diff = np.abs(diff)>max_dist
         #     (mask_peaks.T)[i][bad_diff] = np.nan
             
-        for i in range(1,len(mask_peaks.T)-1):
-            current_group = mask_peaks.T[i]
-            prev_group = mask_peaks.T[i-1]
-            next_group = mask_peaks.T[i+1]
+        # for i in range(1,len(mask_peaks.T)-1):
+        #     current_group = mask_peaks.T[i]
+        #     prev_group = mask_peaks.T[i-1]
+        #     next_group = mask_peaks.T[i+1]
             
-            for j,peak in enumerate(current_group):
-                if np.isnan(peak):
-                    continue
+        #     for j,peak in enumerate(current_group):
+        #         if np.isnan(peak):
+        #             continue
                 
-                dist_to_prev = np.abs(prev_group-peak)
-                dist_to_next = np.abs(next_group-peak)
+        #         dist_to_prev = np.abs(prev_group-peak)
+        #         dist_to_next = np.abs(next_group-peak)
                 
-                # peak closer to a peak in the previous group
-                if np.any(dist_to_prev<=max_dist) and np.min(dist_to_prev)==np.min(dist_to_prev[dist_to_prev<=max_dist]):
-                    closest_peak_idx = np.argmin(dist_to_prev)
-                    mask_peaks.T[i][j] = prev_group[closest_peak_idx]
+        #         # peak closer to a peak in the previous group
+        #         if np.any(dist_to_prev<=max_dist) and np.min(dist_to_prev)==np.min(dist_to_prev[dist_to_prev<=max_dist]):
+        #             closest_peak_idx = np.argmin(dist_to_prev)
+        #             mask_peaks.T[i][j] = prev_group[closest_peak_idx]
 
-                # peak closer to a peak in the next group
-                elif np.any(dist_to_next<=max_dist) and np.min(dist_to_next)==np.min(dist_to_next[dist_to_next<=max_dist]):
-                    closest_peak_idx = np.argmin(dist_to_next)
-                    mask_peaks.T[i][j] = next_group[closest_peak_idx]
+        #         # peak closer to a peak in the next group
+        #         elif np.any(dist_to_next<=max_dist) and np.min(dist_to_next)==np.min(dist_to_next[dist_to_next<=max_dist]):
+        #             closest_peak_idx = np.argmin(dist_to_next)
+        #             mask_peaks.T[i][j] = next_group[closest_peak_idx]
         # for i,mask_dots in enumerate(mask_peaks.T):
         #     diff = np.concatenate(([0],np.diff((mask_peaks.T)[i])))
         #     bad_diff = np.abs(diff)>max_dist
@@ -169,28 +209,28 @@ class Mask():
 
 
         
-        for i,mask_dots in enumerate(mask_peaks.T):
-            initmask = ~np.isnan(mask_dots)
-            # initmask &= ((np.concatenate(([0],np.diff(mask_dots)))<1.*np.nanstd(np.diff(mask_dots)))&
-            #              (np.concatenate(([0],np.diff(mask_dots)))>-1.*np.nanstd(np.diff(mask_dots))))
-            x = np.arange(0,flat_data.shape[1],3)[initmask]
-            mask_dots = mask_dots[initmask]
+        # for i,mask_dots in enumerate(mask_peaks.T):
+        #     initmask = ~np.isnan(mask_dots)
+        #     # initmask &= ((np.concatenate(([0],np.diff(mask_dots)))<1.*np.nanstd(np.diff(mask_dots)))&
+        #     #              (np.concatenate(([0],np.diff(mask_dots)))>-1.*np.nanstd(np.diff(mask_dots))))
+        #     x = np.arange(0,flat_data.shape[1],3)[initmask]
+        #     mask_dots = mask_dots[initmask]
 
-            rand_fits = []
-            rand_masks = []
-            rand_polymasks = []
-            rand_stds = []
-            for j in range(50):
-                rand = np.array([True]*round(0.75*len(mask_dots))+[False]*round(0.25*len(mask_dots)))
-                np.random.shuffle(rand)
-                polymask, cont_fit = ifum_utils.sigma_clip(x[rand],mask_dots[rand],deg=deg,weight=np.ones_like(x[rand]),sigma=1,iter=5,include=0.5)
-                rand_fits.append(cont_fit)
-                rand_masks.append(rand)
-                rand_polymasks.append(polymask)
-                rand_stds.append(np.std(mask_dots[rand][polymask]-np.poly1d(cont_fit)(x[rand][polymask])))
-            cont_fit = rand_fits[np.argmin(rand_stds)]
-            randmask = rand_masks[np.argmin(rand_stds)]
-            polymask = rand_polymasks[np.argmin(rand_stds)]
+        #     rand_fits = []
+        #     rand_masks = []
+        #     rand_polymasks = []
+        #     rand_stds = []
+        #     for j in range(50):
+        #         rand = np.array([True]*round(0.75*len(mask_dots))+[False]*round(0.25*len(mask_dots)))
+        #         np.random.shuffle(rand)
+        #         polymask, cont_fit = ifum_utils.sigma_clip(x[rand],mask_dots[rand],deg=deg,weight=np.ones_like(x[rand]),sigma=1,iter=5,include=0.5)
+        #         rand_fits.append(cont_fit)
+        #         rand_masks.append(rand)
+        #         rand_polymasks.append(polymask)
+        #         rand_stds.append(np.std(mask_dots[rand][polymask]-np.poly1d(cont_fit)(x[rand][polymask])))
+        #     cont_fit = rand_fits[np.argmin(rand_stds)]
+        #     randmask = rand_masks[np.argmin(rand_stds)]
+        #     polymask = rand_polymasks[np.argmin(rand_stds)]
 
             # cont_fit = np.polyfit(x,mask_dots,deg)
             # # print(i,np.std(mask_dots-np.poly1d(cont_fit)(x)))
@@ -207,14 +247,14 @@ class Mask():
             #     # plt.show()
             #     cont_fit = cont_fit
 
-            if np.std(np.poly1d(cont_fit)(x[randmask][polymask])-mask_dots[randmask][polymask])>3:
-                plt.title(i)
-                plt.scatter(x,mask_dots,alpha=0.25)
-                plt.scatter(x[randmask][polymask],mask_dots[randmask][polymask],alpha=0.25)
-                plt.plot(x,np.poly1d(cont_fit)(x),label=i,alpha=0.5,lw=0.75)
-                plt.show(block=False)
-                plt.pause(1)
-                plt.close()
+            # if np.std(np.poly1d(cont_fit)(x[randmask][polymask])-mask_dots[randmask][polymask])>3:
+            #     plt.title(i)
+            #     plt.scatter(x,mask_dots,alpha=0.25)
+            #     plt.scatter(x[randmask][polymask],mask_dots[randmask][polymask],alpha=0.25)
+            #     plt.plot(x,np.poly1d(cont_fit)(x),label=i,alpha=0.5,lw=0.75)
+            #     plt.show(block=False)
+            #     plt.pause(1)
+            #     plt.close()
 
             # if np.std(mask_dots-np.poly1d(cont_fit)(x))>1:
             #     plt.title(i)
@@ -227,7 +267,7 @@ class Mask():
             #     plt.legend()
             #     plt.show()
             #     plt.show()
-            mask_polys[i] = cont_fit
+            # mask_polys[i] = cont_fit
         # plt.legend()
 
         # 2nd run!
@@ -285,10 +325,10 @@ class Mask():
         plt.figure(figsize=(100,100))
         plt.imshow(flat_data,origin="lower",cmap="Greys_r")
         for mask in range(self.total_masks//2):
-            cont_fit = mask_polys[mask]
+            mask_poly = mask_polys[mask]
             x = np.arange(flat_data.shape[1])
-            plt.plot(x,np.poly1d(cont_fit)(x),alpha=0.75,lw=0.75)
-            plt.text(x[0],np.poly1d(cont_fit)(x)[0],str(mask+1),va="center",ha="center",color="orange")
+            plt.plot(x,np.poly1d(mask_poly)(x),alpha=0.75,lw=0.75)
+            plt.text(x[0],np.poly1d(mask_poly)(x)[0],str(mask+1),va="center",ha="center",color="orange")
         plt.axis("off")
         print("saving...")
         plt.savefig("out.png",dpi=100,bbox_inches='tight')
@@ -342,7 +382,8 @@ class Mask():
             cutoffs = np.array(cutoffs)
             
             continuum,_ = scipy.optimize.curve_fit(self.f_2,cutoffs[0::6],flat_data[cutoffs[0::6],x])
-            
+            # DOUBLE CHECK IF 0::6 WORKS FOR NON-STD
+
             try:
                 centers = []
                 sigmas = []
@@ -373,8 +414,8 @@ class Mask():
                             hbounds.append(np.max(flat_data[cutoffs[i]:cutoffs[i+1],x])*2)
                             # append center guess
                             p0.append(np.poly1d(mask_polys[mask])(x))
-                            lbounds.append(np.poly1d(mask_polys[mask])(x)-4)
-                            hbounds.append(np.poly1d(mask_polys[mask])(x)+4)
+                            lbounds.append(np.poly1d(mask_polys[mask])(x)-2) # +/- 2 pixels from first guess
+                            hbounds.append(np.poly1d(mask_polys[mask])(x)+2)
                             # append sigma guess
                             p0.append(3.)
                             lbounds.append(1.5)
@@ -543,8 +584,11 @@ class Mask():
         norm_intensities = np.empty(intensities.shape)
         for i,intensity in enumerate(intensities):
             norm_intensities[i] = np.interp(x, x-lags[i], intensity)
+            # plt.plot(norm_intensities[i],alpha=0.03,color="gray")
         ref_intensity = np.nanmedian(norm_intensities,axis=0)
-    
+        # plt.plot(ref_intensity,color="darkorange")
+        # plt.show()
+
         # gets peak areas for the reference intensity given a certain percentile cutoff
         # perc_cut = 95
         # masked = x[ref_intensity>np.nanpercentile(ref_intensity,perc_cut)]
@@ -555,15 +599,82 @@ class Mask():
         #     for j,a in enumerate(intensities):
         #         peak_xs[i][j] = ifum_utils.get_peak_center(peak_area,4,4,x,a,lags[j])
 
-        peaks,_ = scipy.signal.find_peaks(ref_intensity,
-                                          distance=np.nanmean(traces_sigma)*sig_mult*8)
-        if len(peaks) > expected_peaks:
-            top_args = ref_intensity[peaks].argsort()[-expected_peaks:][::-1]
-            peaks = np.sort(peaks[top_args])
-        peak_xs = np.empty((len(peaks),len(intensities)))
-        for i,peak in enumerate(peaks):
-            for j,a in enumerate(intensities):
-                peak_xs[i][j] = peak + lags[j]
+
+        # splits into 3 quadrants to better account for quadratic diffs (is 3 good?)
+        quadrants = 3
+        quadrants_x = np.array_split(x,quadrants)
+        peak_xs = np.empty((0,len(intensities)))
+        peak_ints = np.array([])
+        for quadrant in range(quadrants):
+            quad_mask = quadrants_x[quadrant]
+            quadrant_ref_a = intensities[0]
+
+            quad_lags = np.empty(intensities.shape[0])
+            norm_intensities = np.empty((intensities.shape[0],quad_mask.size))
+            for i,intensity in enumerate(intensities):
+                quad_mask_ = np.intersect1d(np.union1d(quad_mask,quad_mask+int(lags[i])),
+                                            np.arange(intensities.shape[1]))
+                quad_lag = ifum_utils.get_lag(intensity[quad_mask_],quadrant_ref_a[quad_mask_])
+                quad_lags[i] = quad_lag
+                try:
+                    norm_intensities[i] = intensity[quad_mask+quad_lag]
+                except:
+                    norm_intensities[i] = np.interp(quad_mask, quad_mask-quad_lag, intensity[quad_mask])
+                # plt.plot(quad_mask,norm_intensities[i],alpha=0.01)
+                
+            ref_intensity = np.nanmedian(norm_intensities,axis=0)
+            # plt.plot(quad_mask,ref_intensity)
+
+            peaks,_ = scipy.signal.find_peaks(ref_intensity,
+                                              distance=np.nanmean(traces_sigma)*sig_mult*8)
+            expected_p = int(len(peaks)*0.5) # only include top 50%
+            if len(peaks) > expected_p:
+                top_args = ref_intensity[peaks].argsort()[-expected_p:][::-1]
+                peaks = np.sort(peaks[top_args])
+
+            # for peak in peaks:
+            #     plt.axvline(peak+quad_mask[0],color="red")
+
+            filtered_peaks = []
+            threshold = np.nanmean(traces_sigma)*sig_mult*8*4
+            for peak,intens in zip(peaks,ref_intensity[peaks]):
+                if len(filtered_peaks)==0 or peak-filtered_peaks[-1]>threshold:
+                    filtered_peaks.append(peak)
+                else:
+                    if intens > ref_intensity[filtered_peaks[-1]]:
+                        filtered_peaks[-1] = peak
+
+            # for peak in filtered_peaks:
+            #     plt.axvline(peak+quad_mask[0],color="green")
+            peaks = np.array(filtered_peaks)
+            
+            peak_xs_ = np.empty((len(peaks),len(intensities)))
+            for i,peak in enumerate(peaks):
+                for j,a in enumerate(intensities):
+                    peak_xs_[i][j] = peak + lags[j] + quad_mask[0]
+            peak_xs = np.vstack((peak_xs,peak_xs_))
+            peak_ints = np.append(peak_ints,ref_intensity[peaks]) 
+
+        # only chooses up to expected peaks #
+        if peak_xs.shape[0] > expected_peaks:
+            top_args = np.array(peak_ints).argsort()[-expected_peaks:][::-1]
+            peak_xs = peak_xs[top_args,:]
+        else:
+            print(f"{filename}{self.color}: only {peak_xs.shape[0]}/{expected_peaks} peaks detected")
+
+        # for peak in peak_xs:
+        #     plt.axvline(peak[0],color="blue")
+        # plt.show()
+
+        # peaks,_ = scipy.signal.find_peaks(ref_intensity,
+        #                                   distance=np.nanmean(traces_sigma)*sig_mult*8)
+        # if len(peaks) > expected_peaks:
+        #     top_args = ref_intensity[peaks].argsort()[-expected_peaks:][::-1]
+        #     peaks = np.sort(peaks[top_args])
+        # peak_xs = np.empty((len(peaks),len(intensities)))
+        # for i,peak in enumerate(peaks):
+        #     for j,a in enumerate(intensities):
+        #         peak_xs[i][j] = peak + lags[j]
 
         # plt.figure(figsize=(100,3))
         # plt.plot(ref_intensity)
@@ -627,6 +738,18 @@ class Mask():
                         fit_xs[i,line] = x0+result.x[0]
                         fit_ys[i,line] = y0+result.x[1]
                         rotations[i,line] = 0.5*np.arctan(2*result.x[4]/(result.x[3]-result.x[5]))
+
+                        # args[-1] = True
+                        # res = ifum_utils.minimize_gauss_2d(result.x,args=(args))
+                        # print(0.5*np.arctan(2*result.x[4]/(result.x[3]-result.x[5])),res)
+
+                        # if rotations[i,line] < 0.75 or rotations[i,line] > 1.5 or res > 1:
+                        #     # print(f"bad 2D gauss fit: color {self.color}, mask {mask}, peak {peak}")
+                        #     results_arr[i,line] = np.nan
+                        #     fit_xs[i,line] = np.nan
+                        #     fit_ys[i,line] = np.nan
+                        #     rotations[i,line] = np.nan
+
                     except:
                         # print(f"bad 2D gauss fit: color {self.color}, mask {mask}, peak {peak}")
                         results_arr[i,line] = np.nan

@@ -43,7 +43,7 @@ def minimize_gauss_2d(var,args):
         plt.axis("off")
         plt.subplot(1,3,3)
         plt.title("residual\nSSE: "+f"{res:.3f}")
-        plt.imshow(image_points-gauss_points,origin="lower",cmap="magma")#,vmin=vmin,vmax=vmax)
+        plt.imshow(image_points-gauss_points,origin="lower",cmap="magma",vmin=-0.25,vmax=0.25)
         plt.colorbar(orientation="horizontal", pad=0.0)
         plt.axis("equal")
         plt.axis("off")
@@ -384,3 +384,35 @@ def sigma_clip(x,y,deg,weight,sigma=1,iter=10,include=0.25):
         fit = np.polyfit(x[polymask],y[polymask],deg,w=weight[polymask])
 
     return polymask,fit
+
+
+
+def ransac(x,y,deg,max_iter=100,threshold=1.5):
+    best_inliers = []
+    best_coeffs = None
+    
+    for _ in range(max_iter):
+        sample_indices = np.random.choice(len(x),deg+1,replace=False)
+        x_sample = x[sample_indices]
+        y_sample = y[sample_indices]
+        
+        coeffs = np.polyfit(x_sample, y_sample, deg)
+        y_pred = np.polyval(coeffs, x)
+        
+        distances = np.abs(y - y_pred)
+        
+        inliers = distances < threshold
+        
+        inlier_points = np.where(inliers)[0]
+        if len(inlier_points) > len(best_inliers):
+            best_inliers = inlier_points
+            best_coeffs = coeffs
+    
+    return best_coeffs, best_inliers
+
+
+
+def fixed_poly_shift(y_shift, x, y_data, coeffs):
+    y_pred = np.polyval(x, coeffs) + y_shift
+    loss = np.sum((y_data - y_pred)**2)
+    return loss
