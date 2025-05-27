@@ -871,3 +871,177 @@ class Mask():
         plt.show(block=False)
         plt.pause(60)
         plt.close()
+
+    def _viz_(self,datafilename,color,mask) -> None:
+        import os
+        data_file = os.path.join(os.path.relpath("out"),datafilename+color+".fits")
+        # cmray_file = os.path.join(os.path.relpath("out"),datafilename+color+"_cmray_mask.fits")
+        data_npz = np.load(os.path.join(os.path.relpath("out"),datafilename+self.color+"_trace_fits.npz"))
+
+        data = fits.open(data_file)[0].data
+        # cmray_mask = fits.open(cmray_file)[0].data
+
+        # data[cmray_mask==1] = np.nan
+
+        centers = data_npz["centers"]
+        fit_xs = data_npz["fit_xs"]
+        fit_ys = data_npz["fit_ys"]
+        center_fits = data_npz["init_traces"]
+        center_fits_data = data_npz["traces"]
+        sig_fits = data_npz["init_traces_sigma"]
+        results_arr = data_npz["results_arr"]
+
+        line = 2
+        if ~np.isnan(centers[line,mask]):
+            print("line",line)
+            x0,y0 = centers[line,mask],np.poly1d(center_fits[mask])(centers[line,mask])
+            x_off,y_off = round(1.75*np.poly1d(sig_fits[mask])(x0)),round(2.5*np.poly1d(sig_fits[mask])(x0))
+            
+            data_ = data[round(y0)-y_off:round(y0)+y_off+1,round(x0)-x_off:round(x0)+x_off+1]
+        
+            # var = [0,0,1,a,b,c,0]
+            args = [x0,y0,x_off,y_off,data_,True]
+
+        print(results_arr.shape)
+
+        x_,y_,A,a,b,c,H = results_arr[mask][line]
+        x0,y0,x_off,y_off,data__,plot = args
+
+        x = np.arange(x0-x_off,x0+x_off+0.9,1.)
+        y = np.arange(y0-y_off,y0+y_off+0.9,1.)
+        xv,yv = np.meshgrid(x,y)
+
+        gauss_points = ifum_utils.gauss_2d(xv,yv,x0+x_,y0+y_,A,a,b,c,H)
+        image_points = (data__-np.nanmin(data__))/(np.nanmax(data__)-np.nanmin(data__))
+
+        res = np.nanmean((image_points-gauss_points)**2)
+
+
+        vmin,vmax = np.nanmin(image_points),np.nanmax(image_points)
+        plt.figure(dpi=200,figsize=(10,4.5)).set_facecolor("#C7B299")
+        plt.suptitle("'red' data",weight="bold",color="darkred")
+        plt.subplot(2,7,1)
+        plt.title("gaussian",weight="bold")
+        plt.imshow(gauss_points,origin="lower",cmap="magma",vmin=vmin,vmax=vmax)
+        cbar = plt.colorbar(orientation="horizontal", pad=0.0, shrink=0.9)
+        cbar.set_ticks([0,0.5,1])
+        plt.axis("equal")
+        plt.axis("off")
+        plt.subplot(2,7,2)
+        plt.title("data",weight="bold")
+        plt.imshow(image_points,origin="lower",cmap="magma",vmin=vmin,vmax=vmax)
+        cbar = plt.colorbar(orientation="horizontal", pad=0.0, shrink=0.9)
+        cbar.set_ticks([0,0.5,1])
+        plt.axis("equal")
+        plt.axis("off")
+        plt.subplot(2,7,3)
+        plt.title("residual",weight="bold")
+        vmin,vmax = np.nanmin(image_points-gauss_points),np.nanmax(image_points-gauss_points)
+        vminmax = .35
+        plt.imshow(image_points-gauss_points,origin="lower",cmap="PuOr",vmin=-vminmax,vmax=vminmax)
+        aspect = 20
+        cbar = plt.colorbar(orientation="horizontal", pad=0.0, shrink=0.9)
+        cbar.set_ticks([-0.3, 0.0, 0.3])
+        plt.axis("equal")
+        plt.axis("off")
+
+
+
+        line = 10
+        if ~np.isnan(centers[line,mask]):
+            print("line",line)
+            x0,y0 = centers[line,mask],np.poly1d(center_fits[mask])(centers[line,mask])
+            x_off,y_off = round(1.75*np.poly1d(sig_fits[mask])(x0)),round(2.5*np.poly1d(sig_fits[mask])(x0))
+            
+            data_ = data[round(y0)-y_off:round(y0)+y_off+1,round(x0)-x_off:round(x0)+x_off+1]
+        
+            var = [0,0,1,a,b,c,0]
+            args = [x0,y0,x_off,y_off,data_,True]
+
+        print(results_arr[mask][line])
+
+        x_,y_,A,a,b,c,H = results_arr[mask][line]
+        x0,y0,x_off,y_off,data__,plot = args
+
+        x = np.arange(x0-x_off,x0+x_off+0.9,1.)
+        y = np.arange(y0-y_off,y0+y_off+0.9,1.)
+        xv,yv = np.meshgrid(x,y)
+
+        gauss_points = ifum_utils.gauss_2d(xv,yv,x0+x_,y0+y_,A,a,b,c,H)
+        image_points = (data__-np.nanmin(data__))/(np.nanmax(data__)-np.nanmin(data__))
+
+        res = np.nanmean((image_points-gauss_points)**2)
+
+        vmin,vmax = np.nanmin(image_points),np.nanmax(image_points)
+        plt.subplot(2,7,5)
+        plt.title("gaussian",weight="bold")
+        plt.imshow(gauss_points,origin="lower",cmap="magma",vmin=vmin,vmax=vmax)
+        cbar = plt.colorbar(orientation="horizontal", pad=0.0, shrink=0.9)
+        cbar.set_ticks([0,0.5,1])
+        plt.axis("equal")
+        plt.axis("off")
+        plt.subplot(2,7,6)
+        plt.title("data",weight="bold")
+        plt.imshow(image_points,origin="lower",cmap="magma",vmin=vmin,vmax=vmax)
+        cbar = plt.colorbar(orientation="horizontal", pad=0.0, shrink=0.9)
+        cbar.set_ticks([0,0.5,1])
+        plt.axis("equal")
+        plt.axis("off")
+        plt.subplot(2,7,7)
+        plt.title("residual",weight="bold")
+        vmin,vmax = np.nanmin(image_points-gauss_points),np.nanmax(image_points-gauss_points)
+        vminmax = .35
+        plt.imshow(image_points-gauss_points,origin="lower",cmap="PuOr",vmin=-vminmax,vmax=vminmax)
+        aspect = 20
+        cbar = plt.colorbar(orientation="horizontal", pad=0.0, shrink=0.9)
+        cbar.set_ticks([-0.3, 0.0, 0.3])
+        plt.axis("equal")
+        plt.axis("off")
+        import os
+
+
+        data_file = os.path.join(os.path.relpath("out"),datafilename+color+".fits")
+        data = fits.open(data_file)[0].data
+        data = data[25:125,850:1250]
+
+        plt.subplot(2,2,3)
+        plt.title("mask 3 (lower λ)",weight="bold")
+        plt.imshow(data,origin="lower",vmin=np.percentile(data,1),vmax=np.percentile(data,99),cmap="Greys_r")
+        mask = 3
+        plt.plot(np.arange(850,1250)-850,np.poly1d(center_fits[mask])(np.arange(850,1250))-25,lw=0.5,c="red")
+        plt.plot(np.arange(850,1250)-850,np.poly1d(center_fits_data[mask])(np.arange(850,1250))-25,lw=0.5,c="gold")
+
+        for line in np.arange(5):
+            if line == 2 or line == 28:
+                plt.scatter(fit_xs[mask][line]-850,fit_ys[mask][line]-25,color="gold",s=100,marker="x")
+            else:
+                plt.scatter(fit_xs[mask][line]-850,fit_ys[mask][line]-25,color="sienna",s=100,marker="x")
+
+        plt.axis("off")
+
+
+
+        plt.subplot(2,2,4)
+
+        data_file = os.path.join(os.path.relpath("out"),datafilename+color+".fits")
+        data = fits.open(data_file)[0].data
+        data = data[50:125,-500:]
+        plt.title("mask 3 (higher λ)",weight="bold")
+
+        plt.imshow(data,origin="lower",vmin=np.percentile(data,1),vmax=np.percentile(data,99),cmap="Greys_r")
+        mask = 3
+        plt.plot(np.arange(2048-500,2048)-2048+500,np.poly1d(center_fits[mask])(np.arange(2048-500,2048))-50,lw=0.5,c="red")
+        plt.plot(np.arange(2048-500,2048)-2048+500,np.poly1d(center_fits_data[mask])(np.arange(2048-500,2048))-50,lw=0.5,c="gold")
+
+        for line in np.arange(centers.shape[0]-5,centers.shape[0]):
+            print(line)
+            if line == 2 or line == 27:
+                plt.scatter(fit_xs[mask][line]-2048+500,fit_ys[mask][line]-50,color="gold",s=100,marker="x")
+            else:
+                plt.scatter(fit_xs[mask][line]-2048+500,fit_ys[mask][line]-50,color="sienna",s=100,marker="x")
+
+        plt.axis("off")
+
+        plt.tight_layout(pad=1)
+        # plt.savefig("im06.png",dpi=400,bbox_inches='tight',pad_inches=0.1)
+        plt.show()
