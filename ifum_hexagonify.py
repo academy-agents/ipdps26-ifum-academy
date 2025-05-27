@@ -45,6 +45,9 @@ def plot_grid(ax,x_hexes,y_hexes,s,width,height,pixels,hexes,percentages,plot_co
     '''        
     
     colors = sns.color_palette(cmap,x_hexes*y_hexes)
+    colors = sns.color_palette(["#854001","#D45D00","#FF8C01","#F3C84D","#BEE3B6","#7998CC","#625EB2"],x_hexes*y_hexes)
+
+    # colors = ["#542E26","#854001","#D45D00","#FF8C01","#F3C84D","#BEE3B6","#7998CC","#625EB2"]*400
 
     # plots pixel grid
     if plot_complex:
@@ -52,8 +55,8 @@ def plot_grid(ax,x_hexes,y_hexes,s,width,height,pixels,hexes,percentages,plot_co
         for i, pix_im in enumerate(tqdm(pixels,desc="graphing pixels",colour="#DA70D6")):
             color = np.sum(np.repeat(percentages[i],3).reshape((len(percentages[i]),3))*colors,axis=0)
             ax.fill(*pix_im.exterior.xy,color=color.round(decimals=3),alpha=0.5)
-            if show_numbers:
-                ax.text(pix_im.centroid.x,pix_im.centroid.y,f'{i%round(width)},{round((i-i%round(width))/(round(width)))}',horizontalalignment='center',verticalalignment='center',size='x-small',color="white")
+            # if show_numbers:
+            #     ax.text(pix_im.centroid.x,pix_im.centroid.y,f'{i%round(width)},{round((i-i%round(width))/(round(width)))}',horizontalalignment='center',verticalalignment='center',size='x-small',color="white")
         ax.set_xticks([])
         ax.set_yticks([])
     else:
@@ -69,7 +72,8 @@ def plot_grid(ax,x_hexes,y_hexes,s,width,height,pixels,hexes,percentages,plot_co
         color = colors[i] if plot_complex else "darkorange"
         ax.plot(*hex_im.exterior.xy,color=color,linewidth=5.0)
         if show_numbers:
-            ax.text(hex_im.centroid.x,hex_im.centroid.y,f'{i}: {(i-i%y_hexes)//y_hexes},{i%y_hexes}',horizontalalignment='center',verticalalignment='center',weight="bold",size=s*5,color=color)
+            # ax.text(hex_im.centroid.x,hex_im.centroid.y,f'{i}: {(i-i%y_hexes)//y_hexes},{i%y_hexes}',horizontalalignment='center',verticalalignment='center',weight="bold",size=s*5,color=color)
+            ax.text(hex_im.centroid.x,hex_im.centroid.y,f'{i}',horizontalalignment='center',verticalalignment='center',weight="bold",size=s*5,color=color)
 
     return ax
 
@@ -293,7 +297,7 @@ def hex_grid(x_hexes,y_hexes,f,off_pos,pixels,minimize_interp,plot_complex=True,
 
     if save:
         print("saving...")
-        plt.savefig('hex_grid.png',dpi=400)
+        plt.savefig('hex_grid.png',dpi=400,transparent=True,bbox_inches='tight',pad_inches=0.1)
         print(f"  saved: {os.path.join(os.getcwd(),'')}hex_grid.png")
     print("plotting...")
     

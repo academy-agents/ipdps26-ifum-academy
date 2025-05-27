@@ -61,9 +61,11 @@ class Stack():
 
         # step 1: make grid so each pixel adds up to 1 or nan
         fig, ax = plt.subplots()
-        fig.set_figwidth(round(plot_args_["width"])//1.8)
-        fig.set_figheight(math.ceil(plot_args_["height"])//1.8)
-        fig.set_facecolor("lightgray")
+        # fig.set_figwidth(round(plot_args_["width"])//1.8)
+        # fig.set_figheight(math.ceil(plot_args_["height"])//1.8)
+        fig.set_figwidth(round(plot_args_["width"])//5)
+        fig.set_figheight(math.ceil(plot_args_["height"])//5)
+        # fig.set_facecolor("lightgray")
 
         old_percentages = plot_args_["percentages"]
         # turns old_percentages to 0s which eventually becomes nans (hexagon blue #23)
@@ -88,6 +90,7 @@ class Stack():
         print("plotting...")
         plt.tight_layout()
         ax.set_aspect('equal')
+        plt.savefig('hex_grid.png',dpi=200,transparent=True,bbox_inches='tight',pad_inches=0.1)
         plt.show(block=False)
         plt.pause(10)
         plt.close()

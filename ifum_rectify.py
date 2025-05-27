@@ -70,7 +70,7 @@ class Rectify():
 
             self.sky_lines = [4026.1914,
                             4861.3203,
-                            5197.9282,
+                            # 5197.9282,
                             5577.3467,
                             5867.5522,
                             5889.9590,
@@ -78,9 +78,9 @@ class Rectify():
                             5915.3076,
                             5932.8643,
                             5953.3589*0.5+5953.4897*0.5]
-            self.sky_lines_guess_ = [9,
+            self.sky_lines_guess_ = [7,
                                     844,
-                                    1180,
+                                    # 1180,
                                     1558,
                                     1849,
                                     1873,
@@ -115,7 +115,7 @@ class Rectify():
                                         5187.746,
                                         #   5221.271,
                                         #   5421.352,
-                                        5451.652,
+                                        # 5451.652,
                                         5495.874,
                                         5506.113,
                                         5558.702,
@@ -183,7 +183,7 @@ class Rectify():
                                         4143.761,
                                         #   4168.967,
                                         4387.9296,
-                                        4471.4802,
+                                        # 4471.4802,
                                         4713.1457,
                                         4921.9313,
                                         5015.6783,
@@ -698,12 +698,16 @@ class Rectify():
                 d,c,b,a = args
                 return shift+a*x+b*x**2+c*x**3+d*x**4
         
+            self.sky_lines = self.sky_lines[1:]
+            centers = centers[1:]
+            stds = stds[1:]
+
             fit_shift,_ = scipy.optimize.curve_fit(deg4poly,centers,self.sky_lines,p0=shift0)
             shift = fit_shift-shift0
             centers = centers+shift
             arc_stds = arc_stds*5
 
-            full_colors = np.concatenate([self.emission_colors,np.repeat("orange",len(self.sky_lines))])
+            full_colors = np.concatenate([self.emission_colors,np.repeat("brown",len(self.sky_lines))])
             full_wls = np.concatenate([self.clear_emission_lines,self.sky_lines])
             full_centers = np.concatenate([arc_centers,centers])
             full_stds = np.concatenate([arc_stds,stds])
@@ -729,8 +733,8 @@ class Rectify():
         full_stds = full_stds[mask]
         full_stds = np.nan_to_num(full_stds)
 
-        # full_best_fit = np.polyfit(full_centers,full_wls,3)#,w=full_stds)
-        full_best_fit, _ = ifum_utils.ransac(full_centers,full_wls,deg,max_iter=1000,threshold=0.05)
+        full_best_fit = np.polyfit(full_centers,full_wls,deg)#,w=full_stds)
+        # full_best_fit, _ = ifum_utils.ransac(full_centers,full_wls,deg,max_iter=1000,threshold=0.1)
 
         plt.figure().set_facecolor("lightgray")
         # plt.title(f"{data_filename+color} RESIDUALS")
@@ -811,3 +815,56 @@ class Rectify():
         plt.plot(np.poly1d(prelim_calib)(x),ifum_utils.normalize(intensity_arc),color="blue",alpha=0.5)
         plt.plot(np.poly1d(prelim_calib)(x),ifum_utils.normalize(intensity),color="darkorange",alpha=0.5)
         plt.show()
+
+    def viz_rect(self):
+        import matplotlib
+        cmap = matplotlib.colormaps.get_cmap('gray').copy()
+        cmap.set_bad(color='maroon')
+        
+        npz_data = np.load(self.trace_data)
+        npz_arc = np.load(self.trace_arc)
+
+        data_xs = npz_arc["rect_wl"]
+        data_intensities = npz_data["rect_int"]
+        arc_xs = npz_arc["rect_wl"]
+        arc_intensities = npz_arc["rect_int"]
+
+        x = np.arange(np.min(data_xs),np.max(data_xs),1)
+
+        plt.figure(dpi=100)#.set_facecolor("lightgray")
+        plt.subplot(5,1,3)
+        plt.title("transformation gradient",weight="bold",color="#542E26")
+        plt.imshow(arc_xs,cmap="twilight_shifted",origin="lower")
+        plt.gca().set_xticks([])
+        plt.gca().set_yticks([])
+        plt.subplot(5,1,1)
+        plt.title("1D arc lamp spectra",color="#854001")
+        plt.imshow(arc_intensities,cmap=cmap,origin="lower",vmin=0,vmax=150)
+        plt.gca().set_xticks([])
+        plt.gca().set_yticks([])
+        plt.subplot(5,1,4)
+        plt.title("rectified arc lamp spectra",color="#854001")
+        norm_intensities = np.empty(arc_intensities.shape)
+        for i,x_ss in enumerate(arc_xs):
+            norm_intensities[i] =  np.interp(x, x_ss, arc_intensities[i])
+        plt.imshow(norm_intensities,cmap=cmap,origin="lower",vmin=0,vmax=150)    
+        plt.gca().set_xticks([])
+        plt.gca().set_yticks([])
+
+        # visualize the results
+        plt.subplot(5,1,2)
+        plt.title("1D on-sky science spectra",color="#854001")
+        plt.imshow(data_intensities,cmap=cmap,origin="lower",vmin=0,vmax=50)
+        plt.gca().set_xticks([])
+        plt.gca().set_yticks([])
+        plt.subplot(5,1,5)
+        plt.title("rectified on-sky science spectra",color="#854001")
+        snorm_intensities = np.empty(data_intensities.shape)
+        for i,x_ss in enumerate(data_xs):
+            snorm_intensities[i] =  np.interp(x, x_ss, data_intensities[i])
+        plt.imshow(snorm_intensities,cmap=cmap,origin="lower",vmin=0,vmax=50)
+        plt.gca().set_xticks([])
+        plt.gca().set_yticks([])
+        plt.tight_layout()
+        plt.savefig("testim.png",dpi=1500,bbox_inches='tight',pad_inches=0.1)
+        plt.close()
