@@ -68,7 +68,7 @@ def midway_config():
         executors=[
             HighThroughputExecutor(
                 label='Midway_HTEX_multinode',
-                address=address_by_interface('bond0'),
+                address=address_by_hostname(),
                 worker_debug=False,
                 max_workers_per_node=2,
                 provider=LocalProvider(
@@ -76,7 +76,7 @@ def midway_config():
                     max_blocks=1,
                     parallelism=1,
                     launcher=SrunLauncher(),
-                    worker_init='module load Python; conda activate /home/babnigg/conda_envs/parsl_py38'
+                    worker_init='source $(conda info --base)/etc/profile.d/conda.sh; conda activate /home/babnigg/conda_envs/ifum_parsl'
                     ),
             )
         ],
