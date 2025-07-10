@@ -1,0 +1,9 @@
+notebook
+pandas
+numpy
+scikit-learn
+matplotlib
+jupyter
+parsl
+astropy
+scipy

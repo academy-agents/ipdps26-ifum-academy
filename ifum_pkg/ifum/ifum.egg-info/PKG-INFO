@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: ifum
+Version: 2025.0.0
+Summary: Parsl integration in an integral field unit spectroscopy pipeline.
+Author: Daniel Babnigg
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+Requires-Dist: notebook
+Requires-Dist: pandas
+Requires-Dist: numpy
+Requires-Dist: scikit-learn
+Requires-Dist: matplotlib
+Requires-Dist: jupyter
+
+...
