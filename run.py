@@ -1,7 +1,7 @@
 import numpy as np
 import parsl
 import ifum
-
+import config
 
 
 if __name__ == "__main__":
@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
     ######### CONFIG #########
 
-    config = ifum.midway_config()
+    config = config.midway_config()
     parsl.load(config)
 
 
