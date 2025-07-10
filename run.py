@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
     ######### CONFIG #########
 
-    config = ifum.local_config()
+    config = ifum.midway_config()
     parsl.load(config)
 
 
