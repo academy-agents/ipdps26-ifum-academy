@@ -9,7 +9,7 @@ if __name__ == "__main__":
 
     # directory containing unprocessed files
     # directory = "C:\\Users\\daniel\\OneDrive - The University of Chicago\\Documents\\cool lamps\\summer_24\\IFUM data\\ut20240210\\"
-    directory = "\home\babnigg\globus\ifum_run\out"
+    directory = "/home/babnigg/globus/ifum_run/out"
 
     # all files included in a single stack, repeat where necessary
     # only include string in file that includes all files from single exposure
