@@ -6,3 +6,4 @@ notes*
 *.fits
 *.png
 job*
+cmd_*.sh

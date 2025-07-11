@@ -65,12 +65,13 @@ def local_config():
 
 def midway_config():
     config = Config(
+        run_dir="/home/babnigg/globus/IFU-M/runinfo",
         executors=[
             HighThroughputExecutor(
                 label='Midway_HTEX_multinode',
                 address=address_by_hostname(),
                 worker_debug=False,
-                max_workers_per_node=2,
+                # max_workers_per_node=2,
                 provider=LocalProvider(
                     min_blocks=1,
                     max_blocks=1,
