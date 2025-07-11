@@ -1,10 +1,14 @@
 import numpy as np
+import time
+from datetime import timedelta
+
 import parsl
 import ifum
 import config
 
 
 if __name__ == "__main__":
+    start = time.time()
     ######### INPUTS ########
 
     # directory containing unprocessed files
@@ -76,3 +80,9 @@ if __name__ == "__main__":
         info = (datafilename,arcfilename,flatfilename,wavelength,bad_masks,total_masks,mask_groups)
         spectra = ifum.get_spectra(sig_mult,bins,color="b",info=info)
         spectra = ifum.get_spectra(sig_mult,bins,color="r",info=info)
+
+        current_time = time.time()
+        print(f"{str(timedelta(seconds=int(current_time-start)))} | {datafilename} processed", flush=True)
+    
+    end = time.time()
+    print(f"total runtime: {str(timedelta(seconds=int(end-start)))}", flush=True)
