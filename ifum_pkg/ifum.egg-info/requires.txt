@@ -7,3 +7,4 @@ jupyter
 parsl
 astropy
 scipy
+scikit-image

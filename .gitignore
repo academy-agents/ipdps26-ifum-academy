@@ -1,4 +1,5 @@
-out
+out*
+in*
 runinfo
 .ipynb_checkpoints
 __pycache__

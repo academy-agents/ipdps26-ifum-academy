@@ -21,7 +21,8 @@ dependencies = [
     "jupyter",
     "parsl",
     "astropy",
-    "scipy"
+    "scipy",
+    "scikit-image"
 ]
 
 [tool.jupyter]
