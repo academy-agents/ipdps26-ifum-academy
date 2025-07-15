@@ -2,6 +2,7 @@ import numpy as np
 import time
 from datetime import timedelta
 import os
+import concurrent.futures
 import sys
 
 import parsl
@@ -80,9 +81,11 @@ if __name__ == "__main__":
     # out directory where all files are stored
     os.makedirs(os.path.abspath("out"), exist_ok=True)
 
+
     # 1-STITCH: stitch and create file
-    saved_files = []
-    for file in (data_filenames+list(set(arc_filenames))+list(set(flat_filenames))):
+    stitch_files = data_filenames+list(set(arc_filenames))+list(set(flat_filenames))
+    stitch_apps = []
+    for file in stitch_files:
         stitch_args = {
             "directory": directory,
             "filename": file,
@@ -92,39 +95,53 @@ if __name__ == "__main__":
             "arcfilename": None,
             "flatfilename": None
         }
-        saved_files.append(ifum.load_and_save_app(stitch_args,bin_to_2x1))
-    for future in saved_files:
-        # try:
-        future.result()
-        # except Exception as e:
-        #     print(f"1-STITCH error: {e}", flush=True)
-        #     sys.exit(1)
-    print(f"{str(timedelta(seconds=int(time.time()-start)))} | stitched files saved", flush=True)
+        stitch_apps.append(ifum.load_and_save_app(stitch_args,bin_to_2x1))
+    # for future in stitch_apps:
+    #     future.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | stitched files saving", flush=True)
+
 
     # 2-BIAS: solve for bias
-    # (NOT fully parallel yet, weird file error)
-    bias_files = []
-    for datafilename, arcfilename, flatfilename in zip(data_filenames, arc_filenames, flat_filenames):
+    #  double check that parallization is truly working; it should not wait for bias_sub_app to submit noise_app
+    bias_apps = []
+    for flatfilename in np.unique(flat_filenames):
         stitch_args = {
             "directory": directory,
             "filename": None,
             "files": None,
             "color": "b",
-            "datafilename": datafilename,
-            "arcfilename": arcfilename,
+            "datafilename": None,
+            "arcfilename": None,
             "flatfilename": flatfilename
         }
-        bias_files.append(ifum.bias_sub_app(stitch_args))
-        bias_files[-1].result()
+
+        indexes = [i for i, value in enumerate(flat_filenames) if value == flatfilename]
+        relevant_files = np.concat(
+            (np.unique(np.array(data_filenames)[indexes]),
+             np.unique(np.array(arc_filenames)[indexes]),
+             np.unique(np.array(flat_filenames)[indexes]))
+        )
+
+        concurrent.futures.wait(np.array(stitch_apps)[np.isin(stitch_files,file)],return_when="ALL_COMPLETED")
+        internal_noise = ifum.bias_sub_app(stitch_args)
+        for file in relevant_files:
+            stitch_args["filename"] = file
+            concurrent.futures.wait(np.array(stitch_apps)[np.isin(stitch_files,file)],return_when="ALL_COMPLETED")
+            bias_apps.append(ifum.noise_app(stitch_args,internal_noise.result()))
+
         stitch_args["color"] = "r"
-        bias_files.append(ifum.bias_sub_app(stitch_args))
-        bias_files[-1].result()
-    for future in bias_files:
+        internal_noise = ifum.bias_sub_app(stitch_args)
+        for file in relevant_files:
+            stitch_args["filename"] = file
+            bias_apps.append(ifum.noise_app(stitch_args,internal_noise.result()))
+
+    for future in bias_apps:
         future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | internal bias solved", flush=True)
 
+
     # 3-CMRAY: create cosmic ray masks
-    cmray_masks = []
+    cmray_apps = []
     for datafilename in data_filenames:
         stitch_args = {
             "directory": directory,
@@ -135,14 +152,18 @@ if __name__ == "__main__":
             "arcfilename": None,
             "flatfilename": None
         }
-        cmray_masks.append(ifum.cmray_mask_app(stitch_args,data_filenames))
+        cmray_apps.append(ifum.cmray_mask_app(stitch_args,data_filenames))
         stitch_args["color"] = "r"
-        cmray_masks.append(ifum.cmray_mask_app(stitch_args,data_filenames))
-    for future in cmray_masks:
-        future.result()
-    print(f"{str(timedelta(seconds=int(time.time()-start)))} | cosmic ray masks created", flush=True)
+        cmray_apps.append(ifum.cmray_mask_app(stitch_args,data_filenames))
+    # i do not need cmray masks done now! can start next step until rectify
+    # for future in cmray_apps:
+    #     future.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | cosmic ray masks processing", flush=True)
 
 
+    sys.exit(1)
+
+    # concurrent futures wait python docs / as_completed
 
     # 4-FLATMASK: using flat field, first guess then complex guess
     # need to still parallelize better on this part!

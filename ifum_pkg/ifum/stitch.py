@@ -26,32 +26,41 @@ class Stitch():
         save_file(files,self.filename,bin_to_2x1)
         return None
 
-    def bias_sub(self) -> None:
+    def bias_sub(self) -> np.ndarray:
         import os
         from astropy.io import fits
         from scipy import ndimage
         import numpy as np
 
-        data_file = os.path.join(os.path.abspath("out"),self.datafilename+"_withbias_"+self.color+".fits")
-        arc_file = os.path.join(os.path.abspath("out"),self.arcfilename+"_withbias_"+self.color+".fits")
+        # data_file = os.path.join(os.path.abspath("out"),self.datafilename+"_withbias_"+self.color+".fits")
+        # arc_file = os.path.join(os.path.abspath("out"),self.arcfilename+"_withbias_"+self.color+".fits")
         flat_file = os.path.join(os.path.abspath("out"),self.flatfilename+"_withbias_"+self.color+".fits")
         
-        with fits.open(data_file) as dataf, \
-             fits.open(arc_file) as arc_dataf, \
-             fits.open(flat_file) as flat_dataf:
+        # with fits.open(data_file) as dataf, \
+        #      fits.open(arc_file) as arc_dataf, \
+        with fits.open(flat_file) as flat_dataf:
             
-            data = dataf[0].data
-            arc_data = arc_dataf[0].data
+            # data = dataf[0].data
+            # arc_data = arc_dataf[0].data
             flat_data = flat_dataf[0].data
 
+        # THINK is there a better way to compute internal noise?
         median_image = ndimage.median_filter(flat_data,size=(1,9))
         internal_noise = flat_data/median_image
         internal_noise = (internal_noise)/(np.percentile(internal_noise,99)-np.min(internal_noise))
 
-        fits.writeto(filename=os.path.join(os.path.abspath("out"),self.datafilename+self.color+".fits"), data=data/internal_noise, overwrite=True)
-        fits.writeto(filename=os.path.join(os.path.abspath("out"),self.arcfilename+self.color+".fits"), data=arc_data/internal_noise, overwrite=True)
-        fits.writeto(filename=os.path.join(os.path.abspath("out"),self.flatfilename+self.color+".fits"), data=flat_data/internal_noise, overwrite=True)
         fits.writeto(filename=os.path.join(os.path.abspath("out"),self.flatfilename+"_biasfilter_"+self.color+".fits"), data=internal_noise, overwrite=True)
+
+        return internal_noise
+
+    def write_noise(self, internal_noise) -> None:
+        data_file = os.path.join(os.path.abspath("out"),self.filename+"_withbias_"+self.color+".fits")
+        
+        with fits.open(data_file) as datahdu:
+            data = datahdu[0].data
+
+        denoised = data/internal_noise
+        fits.writeto(filename=os.path.join(os.path.abspath("out"),self.filename+self.color+".fits"), data=denoised, overwrite=True)
 
         return None
 
@@ -194,6 +203,11 @@ def load_and_save_app(stitch_args, bin_to_2x1=True):
 def bias_sub_app(stitch_args):
     stitch = Stitch(**stitch_args)
     return stitch.bias_sub()
+
+@python_app
+def noise_app(stitch_args,internal_noise):
+    stitch = Stitch(**stitch_args)
+    return stitch.write_noise(internal_noise)
 
 @python_app
 def cmray_mask_app(stitch_args, data_files) -> None:
