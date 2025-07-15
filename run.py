@@ -80,75 +80,67 @@ if __name__ == "__main__":
     # out directory where all files are stored
     os.makedirs(os.path.abspath("out"), exist_ok=True)
 
-    # # 1-STITCH: stitch and create file
-    # saved_files = []
-    # for file in (data_filenames+list(set(arc_filenames))+list(set(flat_filenames))):
-    #     stitch_args = {
-    #         "directory": directory,
-    #         "filename": file,
-    #         "files": None,
-    #         "color": None,
-    #         "datafilename": None,
-    #         "arcfilename": None,
-    #         "flatfilename": None
-    #     }
-    #     saved_files.append(ifum.load_and_save_app(stitch_args,bin_to_2x1))
-    # for future in saved_files:
-    #     try:
-    #         future.result()
-    #     except Exception as e:
-    #         print(f"1-STITCH error: {e}", flush=True)
-    #         sys.exit(1)
-    # print(f"{str(timedelta(seconds=int(time.time()-start)))} | stitched files saved", flush=True)
+    # 1-STITCH: stitch and create file
+    saved_files = []
+    for file in (data_filenames+list(set(arc_filenames))+list(set(flat_filenames))):
+        stitch_args = {
+            "directory": directory,
+            "filename": file,
+            "files": None,
+            "color": None,
+            "datafilename": None,
+            "arcfilename": None,
+            "flatfilename": None
+        }
+        saved_files.append(ifum.load_and_save_app(stitch_args,bin_to_2x1))
+    for future in saved_files:
+        # try:
+        future.result()
+        # except Exception as e:
+        #     print(f"1-STITCH error: {e}", flush=True)
+        #     sys.exit(1)
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | stitched files saved", flush=True)
 
-    # # 2-BIAS: solve for bias
-    # # (NOT fully parallel yet, file error)
-    # bias_files = []
-    # for datafilename, arcfilename, flatfilename in zip(data_filenames, arc_filenames, flat_filenames):
-    #     stitch_args = {
-    #         "directory": directory,
-    #         "filename": None,
-    #         "files": None,
-    #         "color": "b",
-    #         "datafilename": datafilename,
-    #         "arcfilename": arcfilename,
-    #         "flatfilename": flatfilename
-    #     }
-    #     bias_files.append(ifum.bias_sub_app(stitch_args))
-    #     bias_files[-1].result()
-    #     stitch_args["color"] = "r"
-    #     bias_files.append(ifum.bias_sub_app(stitch_args))
-    #     bias_files[-1].result()
-    # # for future in bias_files:
-    # #     try:
-    # #         future.result()
-    # #     except Exception as e:
-    # #         print(f"2-BIAS error: {e}", flush=True)
-    # #         sys.exit(1)
-    # print(f"{str(timedelta(seconds=int(time.time()-start)))} | internal bias solved", flush=True)
+    # 2-BIAS: solve for bias
+    # (NOT fully parallel yet, weird file error)
+    bias_files = []
+    for datafilename, arcfilename, flatfilename in zip(data_filenames, arc_filenames, flat_filenames):
+        stitch_args = {
+            "directory": directory,
+            "filename": None,
+            "files": None,
+            "color": "b",
+            "datafilename": datafilename,
+            "arcfilename": arcfilename,
+            "flatfilename": flatfilename
+        }
+        bias_files.append(ifum.bias_sub_app(stitch_args))
+        bias_files[-1].result()
+        stitch_args["color"] = "r"
+        bias_files.append(ifum.bias_sub_app(stitch_args))
+        bias_files[-1].result()
+    for future in bias_files:
+        future.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | internal bias solved", flush=True)
 
-    # # 3-CMRAY: create cosmic ray masks
-    # cmray_masks = []
-    # for datafilename in data_filenames:
-    #     stitch_args = {
-    #         "directory": directory,
-    #         "filename": None,
-    #         "files": None,
-    #         "color": "b",
-    #         "datafilename": datafilename,
-    #         "arcfilename": None,
-    #         "flatfilename": None
-    #     }
-    #     cmray_masks.append(ifum.cmray_mask_app(stitch_args,data_filenames))
-    #     stitch_args["color"] = "r"
-    #     cmray_masks.append(ifum.cmray_mask_app(stitch_args,data_filenames))
-    # for future in cmray_masks:
-    #     try:
-    #         future.result()
-    #     except Exception as e:
-    #         print(f"3-CMRAY error: {e}", flush=True)
-    #         sys.exit(1)
-    # print(f"{str(timedelta(seconds=int(time.time()-start)))} | cosmic ray masks created", flush=True)
+    # 3-CMRAY: create cosmic ray masks
+    cmray_masks = []
+    for datafilename in data_filenames:
+        stitch_args = {
+            "directory": directory,
+            "filename": None,
+            "files": None,
+            "color": "b",
+            "datafilename": datafilename,
+            "arcfilename": None,
+            "flatfilename": None
+        }
+        cmray_masks.append(ifum.cmray_mask_app(stitch_args,data_filenames))
+        stitch_args["color"] = "r"
+        cmray_masks.append(ifum.cmray_mask_app(stitch_args,data_filenames))
+    for future in cmray_masks:
+        future.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | cosmic ray masks created", flush=True)
 
 
 
@@ -193,19 +185,203 @@ if __name__ == "__main__":
         flat_traces.append(ifum.create_flatmask_app(mask_args,center_deg,sigma_deg,flat_traces))
         print(f"5submitted: {flatfilename}", flush=True)
     for future in flat_traces:
-        try:
-            future.result()
-        except Exception as e:
-            print(f"5-FLATTRACE error: {e}", flush=True)
-            sys.exit(1)
+        # try:
+        future.result()
+        # except Exception as e:
+            # print(f"5-FLATTRACE error: {e}", flush=True)
+            # sys.exit(1)
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | flat field based traces saved", flush=True)
 
+    # 6-ARCOPT: optimize flat traces on arc data
+    expected_peaks = 25
+    optimize = True
+    arc_opts = []
+    for arcfilename, flatfilename in zip(np.unique(arc_filenames), np.unique(flat_filenames)):
+        mask_args = {
+            "color": "b",
+            "flatfilename": flatfilename,
+            "bad_masks": bad_masks,
+            "total_masks": total_masks,
+            "mask_groups": mask_groups
+        }
+        arc_opts.append(ifum.optimize_arc_app(mask_args,arcfilename,sig_mult,expected_peaks,optimize))
+        mask_args["color"] = "r"        
+        arc_opts.append(ifum.optimize_arc_app(mask_args,arcfilename,sig_mult,expected_peaks,optimize))
+    for future in arc_opts:
+        future.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | traces optimized for arc data", flush=True)    
 
-    # for datafilename, arcfilename, flatfilename in zip(data_filenames, arc_filenames, flat_filenames):
-    #     info = (datafilename,arcfilename,flatfilename,wavelength,bad_masks,total_masks,mask_groups)
-    #     spectra = ifum.get_spectra(sig_mult,bins,color="b",info=info)
-    #     spectra = ifum.get_spectra(sig_mult,bins,color="r",info=info)
+    # 7-DATAOPT: optimize flat traces on on-sky science data, get rotations of spectral features
+    expected_peaks = 25
+    optimize = True
+    data_opts = []
+    for datafilename, arcfilename, flatfilename in zip(data_filenames, arc_filenames, flat_filenames):
+        mask_args = {
+            "color": "b",
+            "flatfilename": flatfilename,
+            "bad_masks": bad_masks,
+            "total_masks": total_masks,
+            "mask_groups": mask_groups
+        }
+        data_opts.append(ifum.optimize_data_app(mask_args,arcfilename,datafilename,sig_mult,expected_peaks,optimize))
+        mask_args["color"] = "b"
+        data_opts.append(ifum.optimize_data_app(mask_args,arcfilename,datafilename,sig_mult,expected_peaks,optimize))
+    for future in data_opts:
+        future.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | traces optimized for science data", flush=True)    
 
-    #     print(f"{str(timedelta(seconds=int(time.time()-start)))} | {datafilename} processed", flush=True)
-    
+    # 8-ARCTRACE: create the mask files with the arc trace optimizations
+    arc_traces = []
+    for arcfilename, flatfilename in zip(np.unique(arc_filenames), np.unique(flat_filenames)):
+        mask_args = {
+            "color": "b",
+            "flatfilename": flatfilename,
+            "bad_masks": bad_masks,
+            "total_masks": total_masks,
+            "mask_groups": mask_groups
+        }
+        arc_traces.append(ifum.create_mask_app(mask_args,arcfilename,arcfilename,sig_mult))
+        mask_args["color"] = "r"
+        arc_traces.append(ifum.create_mask_app(mask_args,arcfilename,arcfilename,sig_mult))
+    for future in arc_traces:
+        future.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | arc optimized trace masks saved", flush=True)    
+
+    # 9-DATATRACE: create the mask files with the data trace optmizations
+    copy = False
+    data_traces = []
+    for datafilename, arcfilename, flatfilename in zip(data_filenames, arc_filenames, flat_filenames):
+        mask_args = {
+            "color": "b",
+            "flatfilename": flatfilename,
+            "bad_masks": bad_masks,
+            "total_masks": total_masks,
+            "mask_groups": mask_groups
+        }
+        data_traces.append(ifum.create_mask_app(mask_args,datafilename,arcfilename,sig_mult,copy))
+        mask_args["color"] = "r"
+        data_traces.append(ifum.create_mask_app(mask_args,datafilename,arcfilename,sig_mult,copy))
+    for future in data_traces:
+        future.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | data optimized trace masks saved", flush=True)    
+
+
+
+    # 10-CENTEROPTDATA: optimize the precalculated centers for data files, filling in sparse areas
+    rect_opt_data = []
+    for datafilename, arcfilename, flatfilename in zip(data_filenames, arc_filenames, flat_filenames):
+        rectify_args = {
+            "color": "b",
+            "datafilename": datafilename,
+            "arcfilename": arcfilename,
+            "flatfilename": flatfilename,
+            "wavelength": wavelength,
+            "bad_masks": bad_masks,
+            "total_masks": total_masks,
+            "mask_groups": mask_groups
+        }
+        rect_opt_data.append(ifum.optimize_center_app(rectify_args,"data",fix_sparse=True))
+        rectify_args["color"] = "r"        
+        rect_opt_data.append(ifum.optimize_center_app(rectify_args,"data",fix_sparse=True))
+    for future in rect_opt_data:
+        future.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | fixed sparse data centers for rectification", flush=True)    
+
+    # 11-CENTEROPTARC: optimize the precalculated centers for arc files, filling in sparse areas
+    rect_opt_arc = []
+    for arcfilename, flatfilename in zip(np.unique(arc_filenames), np.unique(flat_filenames)):
+        rectify_args = {
+            "color": "b",
+            "datafilename": "NA",
+            "arcfilename": arcfilename,
+            "flatfilename": flatfilename,
+            "wavelength": wavelength,
+            "bad_masks": bad_masks,
+            "total_masks": total_masks,
+            "mask_groups": mask_groups
+        }
+        rect_opt_arc.append(ifum.optimize_center_app(rectify_args,"arc",fix_sparse=True))
+        rectify_args["color"] = "r"        
+        rect_opt_arc.append(ifum.optimize_center_app(rectify_args,"arc",fix_sparse=True))
+    for future in rect_opt_arc:
+        future.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | fixed sparse arc centers for rectification", flush=True)    
+
+    # 12-RECTDATA: rectify the spectra using the data file
+    rect_data = []
+    for datafilename, arcfilename, flatfilename in zip(data_filenames, arc_filenames, flat_filenames):
+        rectify_args = {
+            "color": "b",
+            "datafilename": datafilename,
+            "arcfilename": arcfilename,
+            "flatfilename": flatfilename,
+            "wavelength": wavelength,
+            "bad_masks": bad_masks,
+            "total_masks": total_masks,
+            "mask_groups": mask_groups
+        }
+        rect_data.append(ifum.rectify_app(rectify_args,arc_or_data="data"))
+        rectify_args["color"] = "r"
+        rect_data.append(ifum.rectify_app(rectify_args,arc_or_data="data"))
+    for future in rect_data:
+        future.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | rectified using the arc data", flush=True)    
+
+    # 13-RECTARC: rectify the spetcra using the arc file
+    rect_arc = []
+    for arcfilename, flatfilename in zip(np.unique(arc_filenames), np.unique(flat_filenames)):
+        rectify_args = {
+            "color": "b",
+            "datafilename": "NA",
+            "arcfilename": arcfilename,
+            "flatfilename": flatfilename,
+            "wavelength": wavelength,
+            "bad_masks": bad_masks,
+            "total_masks": total_masks,
+            "mask_groups": mask_groups
+        }
+        rect_arc.append(ifum.rectify_app(rectify_args,arc_or_data="arc"))
+        rectify_args["color"] = "r"
+        rect_arc.append(ifum.rectify_app(rectify_args,arc_or_data="arc"))
+    for future in rect_arc:
+        future.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | rectified using the on-sky science data", flush=True)    
+
+
+
+    # 14-CALIB: using the rectifications and the calibration information, calibrate the spectra
+    calibs = []
+    for datafilename, arcfilename, flatfilename in zip(data_filenames, arc_filenames, flat_filenames):
+        rectify_args = {
+            "color": "b",
+            "datafilename": datafilename,
+            "arcfilename": arcfilename,
+            "flatfilename": flatfilename,
+            "wavelength": wavelength,
+            "bad_masks": bad_masks,
+            "total_masks": total_masks,
+            "mask_groups": mask_groups
+        }
+        calibs.append(ifum.calib_app(use_sky=True))
+        rectify_args["color"] = "r"
+        calibs.append(ifum.calib_app(use_sky=True))
+    for future in calibs:
+        future.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | calibrations done using rectified spectra", flush=True)    
+
+
+
+    # 15-SPECBIN: using built context, produce the final calibrated spectra using flux binning per pixel
+    # (need to redo with class integration)
+    for datafilename, arcfilename, flatfilename in zip(data_filenames, arc_filenames, flat_filenames):
+        info = (datafilename,arcfilename,flatfilename,wavelength,bad_masks,total_masks,mask_groups)
+        spectra = ifum.get_spectra(sig_mult,bins,color="b",info=info)
+        spectra = ifum.get_spectra(sig_mult,bins,color="r",info=info)
+
+        print(f"{str(timedelta(seconds=int(time.time()-start)))} | {datafilename} processed", flush=True)
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | flux-binned spectra produced", flush=True)    
+
+
+
+    # other metrics? 
     print(f"total runtime: {str(timedelta(seconds=int(time.time()-start)))}", flush=True)

@@ -10,16 +10,9 @@ from parsl.app.app import python_app
 
 from sklearn.cluster import DBSCAN
 
+
+
 class Mask():
-    '''
-    Class to ...
-
-    Attributes:
-
-
-    Methods:
-
-    '''
     def __init__(self, color: str, flatfilename: str, bad_masks, 
                  total_masks: int, mask_groups: int):
         self.color = color
@@ -98,7 +91,7 @@ class Mask():
 
         return mask_polys
 
-    def mask_poly(self, mask_polys, n) -> None:
+    def mask_poly(self, mask_polys, n) -> None:        
         with fits.open(self.flatdir) as flatf:
             flat_data = flatf[0].data
         flat_data = scipy.ndimage.median_filter(flat_data,size=(1,3))
@@ -118,7 +111,7 @@ class Mask():
 
         x_s = lines
         multi_fits = []
-        for x in x_s:            
+        for x in x_s:
             multi_fits.append(
                 multi_gauss_fit(x,mask_polys,masks_split,flat_data,self.bad_mask)
             )
@@ -740,13 +733,147 @@ class Mask():
 
 
 
+
+
+# import possibly in other file?
+@python_app
+def multi_gauss_fit(x,mask_polys,masks_split,flat_data,bad_mask):
+    import numpy as np
+    import scipy
+
+    cutoffs = [5]
+    for i in np.arange(1,len(masks_split)):
+        first = mask_polys[masks_split[i-1]][~np.isnan(mask_polys[masks_split[i-1]]).any(axis=1)][-1]
+        last = mask_polys[masks_split[i]][~np.isnan(mask_polys[masks_split[i]]).any(axis=1)][0]
+        cutoffs.append(int((np.poly1d(first)(x)+np.poly1d(last)(x))/2))
+    cutoffs.append(flat_data.shape[0]-5)
+    cutoffs = np.array(cutoffs)
+
+    # double check that 0::6 to be sure that it is working for non-STD formats
+    continuum,_ = scipy.optimize.curve_fit(f_2,cutoffs[0::6],flat_data[cutoffs[0::6],x])
+
+    try:
+        centers = []
+        sigmas = []
+        amps = []
+        for i,mask_group in enumerate(masks_split):
+            p0 = []
+            lbounds = []
+            hbounds = []
+            
+            # append quadratic shift guess
+            p0.append(continuum[0])
+            l,h = generate_bounds(continuum[0],.3)
+            lbounds.append(l)
+            hbounds.append(h)
+            p0.append(continuum[1])
+            l,h = generate_bounds(continuum[1],.3)
+            lbounds.append(l)
+            hbounds.append(h)
+            p0.append(continuum[2])
+            lbounds.append(-np.inf)
+            hbounds.append(np.inf)
+
+            for mask in mask_group:
+                if mask not in bad_mask:
+                    # append amplitude guess
+                    p0.append(abs(flat_data[int(np.round(np.poly1d(mask_polys[mask])(x))),x]-f_2(int(np.round(np.poly1d(mask_polys[mask])(x))),*continuum)))
+                    lbounds.append(0)
+                    hbounds.append(np.max(flat_data[cutoffs[i]:cutoffs[i+1],x])*2)
+                    # append center guess
+                    p0.append(np.poly1d(mask_polys[mask])(x))
+                    lbounds.append(np.poly1d(mask_polys[mask])(x)-2) # +/- 2 pixels from first guess
+                    hbounds.append(np.poly1d(mask_polys[mask])(x)+2)
+                    # append sigma guess
+                    p0.append(3.)
+                    lbounds.append(1.5)
+                    hbounds.append(5.5)
+            
+            popt,_ = scipy.optimize.curve_fit(gauss_added,np.arange(cutoffs[i],cutoffs[i+1]),flat_data[cutoffs[i]:cutoffs[i+1],x],p0=p0,bounds=(lbounds,hbounds),nan_policy="omit",method="trf")
+
+            center = np.array(popt[3:][1::3])
+            sigma = np.array(popt[3:][2::3])
+            amp = np.array(popt[3:][0::3])
+
+            if np.intersect1d(bad_mask,mask_group).size > 0:
+                _, _, ind2 = np.intersect1d(bad_mask,mask_group,return_indices=True)
+                for mask_ in ind2:
+                    center = np.insert(center, mask_, np.nan, axis=0)
+                    sigma = np.insert(sigma, mask_, np.nan, axis=0)
+                    amp = np.insert(amp, mask_, np.nan, axis=0)
+
+            centers.append(center)
+            sigmas.append(sigma)
+            amps.append(amp)
+
+        return np.array(centers).flatten(),np.array(sigmas).flatten(),np.array(amps).flatten()
+    except:
+        print("bad fit",flush=True)
+        return None
+    
+def mask_poly(mask_polys, n, flatdir, total_masks, mask_groups, bad_mask, datadir) -> None:        
+    with fits.open(flatdir) as flatf:
+        flat_data = flatf[0].data
+    flat_data = scipy.ndimage.median_filter(flat_data,size=(1,3))
+
+    weight = np.log10(np.median(flat_data,axis=0))
+    weight = np.array(weight - np.min(weight))[::3]
+    lines = np.random.choice(np.arange(0,flat_data.shape[1],3),
+                                size=n, 
+                                replace=False, 
+                                p=weight/np.sum(weight))
+
+    gauss_centers_full = np.empty((0,total_masks//2))
+    gauss_sigmas_full = np.empty((0,total_masks//2))
+    gauss_amps_full = np.empty((0,total_masks//2))
+    
+    masks_split = np.array(np.split(np.arange(total_masks//2),mask_groups))
+
+    x_s = lines
+    multi_fits = []
+    for x in x_s:
+        multi_fits.append(
+            multi_gauss_fit(x,mask_polys,masks_split,flat_data,bad_mask)
+        )
+
+    print("submitted")
+    
+    bad_lines = []
+    for i,future in enumerate(multi_fits):
+        if future.result() is None:
+            bad_lines.append(x_s[i])
+        else:
+            centers,sigmas,amps = future.result()
+            gauss_centers_full = np.vstack((gauss_centers_full,np.array(centers).flatten()))
+            gauss_sigmas_full = np.vstack((gauss_sigmas_full,np.array(sigmas).flatten()))
+            gauss_amps_full = np.vstack((gauss_amps_full,np.array(amps).flatten()))
+
+    save_dict = {'x': x_s[np.isin(x_s, bad_lines, invert=True)],
+                 'centers': gauss_centers_full,
+                 'sigmas': gauss_sigmas_full,
+                 'amps': gauss_amps_full}
+
+    np.savez(datadir, **save_dict)
+
+    return None
+
+
+
+
+
 @python_app
 def flat_mask_app(mask_args,polydeg=3,sampling=40):
     mask = Mask(**mask_args)
-    mask_polys0 = mask.first_guess(polydeg)
-    print(mask_polys0.shape,flush=True)
-    mask.mask_poly(mask_polys0,sampling)
-    print("4done",flush=True)
+    mask_polys0 = mask.first_guess(polydeg)    
+    mask_poly(mask_polys0,
+              sampling,
+              mask.flatdir,
+              mask.total_masks,
+              mask.mask_groups,
+              mask.bad_mask,
+              mask.datadir)
+
+    # mask.mask_poly(mask_polys0,sampling)
     return None
 
 @python_app
@@ -756,3 +883,22 @@ def create_flatmask_app(mask_args,center_deg,sigma_deg,sig_mult):
     mask.create_mask(sig_mult)
     return None
 
+@python_app
+def optimize_arc_app(mask_args,arcfilename,sig_mult,expected_peaks,optimize=True):
+    mask = Mask(**mask_args)
+    return mask.optimize_trace(arcfilename,sig_mult,False,expected_peaks=expected_peaks,optimize=optimize)
+
+@python_app
+def optimize_data_app(mask_args,arcfilename,datafilename,sig_mult,expected_peaks,optimize):
+    mask = Mask(**mask_args)
+    mask.optimize_trace(datafilename,sig_mult,True,expected_peaks=expected_peaks,optimize=optimize)
+    mask.get_rots(arcfilename,datafilename,optimize=optimize)
+    return None
+
+@python_app
+def create_mask_app(mask_args,filename,arcfilename,sig_mult,copy=False):
+    mask = Mask(**mask_args)
+    if copy:
+        mask.create_mask(sig_mult,filename,copy=arcfilename)
+    else:
+        return mask.create_mask(sig_mult,filename)
