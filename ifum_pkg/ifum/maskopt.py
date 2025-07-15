@@ -5,7 +5,8 @@ import scipy
 import math
 import matplotlib.pyplot as plt
 import scipy.optimize
-import ifum_code.ifum.utils as utils
+from .utils import *
+from parsl.app.app import python_app
 
 from sklearn.cluster import DBSCAN
 
@@ -14,24 +15,25 @@ class Mask():
     Class to ...
 
     Attributes:
-        
+
 
     Methods:
-        
+
     '''
     def __init__(self, color: str, flatfilename: str, bad_masks, 
                  total_masks: int, mask_groups: int):
         self.color = color
         self.flatfilename = flatfilename
-        self.flatdir = os.path.join(os.path.relpath("out"),self.flatfilename+"_withbias_"+self.color+".fits")
-        self.maskdir = os.path.join(os.path.relpath("out"),self.flatfilename+self.color+"_mask.fits")
-        self.datadir = os.path.join(os.path.relpath("out"),self.flatfilename+self.color+"_trace_fits.npz")
+        self.flatdir = os.path.join(os.path.abspath("out"),self.flatfilename+"_withbias_"+self.color+".fits")
+        self.maskdir = os.path.join(os.path.abspath("out"),self.flatfilename+self.color+"_mask.fits")
+        self.datadir = os.path.join(os.path.abspath("out"),self.flatfilename+self.color+"_trace_fits.npz")
         self.bad_mask = bad_masks[0] if color=="b" else bad_masks[1]
         self.total_masks = total_masks
         self.mask_groups = mask_groups
 
     def first_guess(self, deg, median_filter = (1,9)) -> np.ndarray:
-        flat_data = fits.open(self.flatdir)[0].data
+        with fits.open(self.flatdir) as flatf:
+            flat_data = flatf[0].data
         flat_data = scipy.ndimage.median_filter(flat_data,size=median_filter)
 
         expected_peaks = int(self.total_masks//2-len(self.bad_mask))
@@ -72,18 +74,13 @@ class Mask():
             else:
                 mask_peaks[i,:] = np.nan
 
-        # print(np.mean(num_det_peaks))
-        # print(np.median(num_det_peaks))
-        # plt.hist(num_det_peaks)
-        # plt.show()
-
         all_peaks_flat = np.column_stack([all_x,all_peaks])
 
         threshold = 1.5
         pot_bad_masks = []
         for i,mask_dots in enumerate(mask_peaks.T):
             nanmask = ~np.isnan(mask_dots)
-            best_fit, best_mask = utils.ransac(x[nanmask],mask_dots[nanmask],deg,max_iter=1000,threshold=threshold)
+            best_fit, best_mask = ransac(x[nanmask],mask_dots[nanmask],deg,max_iter=1000,threshold=threshold)
 
             # optimize using all detected peaks
             distances = np.abs(all_peaks_flat[:,1] - np.poly1d(best_fit)(all_peaks_flat[:,0]))
@@ -96,265 +93,14 @@ class Mask():
             if better_fit_std>threshold:
                 pot_bad_masks.append(i)
 
-                plt.scatter(x,mask_dots,color="red")
-                plt.scatter(x[best_mask],mask_dots[best_mask],color="green")
-                plt.plot(x,np.poly1d(best_fit)(x),color="darkorange",alpha=0.5,ls=":")
-                plt.scatter(all_peaks_flat[:,0][all_mask],all_peaks_flat[:,1][all_mask],color="brown",marker="x",alpha=0.5)
-
-                plt.title(better_fit_std)
-                plt.plot(x,np.poly1d(better_fit)(x),color="gold")
-                plt.show()
-
-        for pot_bad in pot_bad_masks:
-            print("potentially bad fit:",pot_bad)
-
-        # "repair" the mask dots to better match neighbors
-        # # # plt.figure(figsize=(100,10))
-        # old_mask_peaks = mask_peaks.copy()
-        # cutoff = 3 # adjacent pixel diff (this is high)
-        # for i,mask_dots in enumerate(mask_peaks.T):
-        #     initmask = ~np.isnan(mask_dots)
-        #     # plt.scatter(np.arange(0,flat_data.shape[1],3)[initmask],mask_dots[initmask],alpha=0.3)
-        #     # diff = np.concatenate(([0],np.diff(mask_dots)))
-        #     # bad_diff = np.abs(diff)>cutoff
-        #     # print(len(mask_dots),np.sum(bad_diff))
-            
-        #     # if not i==0:
-        #     #     diff = np.concatenate(([0],np.diff((mask_peaks.T)[i])))
-        #     #     bad_diff = np.abs(diff)>cutoff
-        #     #     mask_dots_ = mask_dots.copy()
-        #     #     mask_dots_[bad_diff] = (mask_peaks.T)[i-1][bad_diff]
-        #     #     lower_diff = np.concatenate(([0],np.diff(mask_dots_)))
-        #     #     lower_good = np.abs(lower_diff)<=cutoff
-        #     #     (mask_peaks.T)[i][(bad_diff)&(~lower_good)] = np.nan
-        #     #     for col in np.where(lower_good&bad_diff)[0]:
-        #     #         (mask_peaks.T)[i:,col] = np.roll((mask_peaks.T)[i:,col], shift=1)
-
-        #     if i!=(len(mask_peaks.T)-1):
-        #         diff = np.concatenate(([0],np.diff((mask_peaks.T)[i])))
-        #         bad_diff = np.abs(diff)>cutoff
-        #         mask_dots_ = mask_dots.copy()
-        #         mask_dots_[bad_diff] = (mask_peaks.T)[i+1][bad_diff]
-        #         upper_diff = np.concatenate(([0],np.diff(mask_dots_)))
-        #         upper_good = np.abs(upper_diff)<=cutoff
-        #         (mask_peaks.T)[i][(bad_diff)&(~upper_good)] = np.nan
-        #         # print(np.sum(upper_good&bad_diff))
-        #         # plt.figure(figsize=(50,5))
-        #         # plt.scatter(np.arange(0,flat_data.shape[1],3),(mask_peaks.T)[i],marker="x",color="red")
-        #         # mask_peaks[(upper_good&bad_diff),(i+1):] = mask_peaks[(upper_good&bad_diff),:-(i+1)]
-        #         for col in np.where(upper_good&bad_diff)[0]:
-        #             # print(col)
-        #             (mask_peaks.T)[i:,col] = np.roll((mask_peaks.T)[i:,col], shift=-1)
-        #         # plt.scatter(np.arange(0,flat_data.shape[1],3),(mask_peaks.T)[i],color="blue",alpha=0.5)
-        #         # plt.show()
-        #         # print(upper_diff[bad_diff])
-        # plt.show()
-
-        # for i,mask_dots in enumerate(mask_peaks.T):        
-        #     if i!=0:
-        #         diff = np.concatenate(([0],np.diff((mask_peaks.T)[i])))
-        #         bad_diff = np.abs(diff)>cutoff
-        #         mask_dots_ = mask_dots.copy()
-        #         mask_dots_[bad_diff] = (mask_peaks.T)[i-1][bad_diff]
-        #         lower_diff = np.concatenate(([0], np.diff(mask_dots_)))
-        #         lower_good = np.abs(lower_diff)<=cutoff
-        #         (mask_peaks.T)[i][(bad_diff)&(~lower_good)] = np.nan
-        #         for col in np.where(lower_good&bad_diff)[0]:
-        #             (mask_peaks.T)[i:,col] = np.roll((mask_peaks.T)[i:,col], shift=1)
-
-        # attempt repair????
-        # max_dist = 3 # adjacent pixel diff (this is high)
-        # for i,mask_dots in enumerate(mask_peaks.T):
-        #     if i!=(len(mask_peaks.T)-1):
-        #         diff = np.concatenate(([0],np.diff((mask_peaks.T)[i])))
-        #         bad_diff = np.abs(diff)>max_dist
-        #         mask_dots_ = mask_dots.copy()
-        #         mask_dots_[bad_diff] = (mask_peaks.T)[i+1][bad_diff]
-        #         upper_diff = np.concatenate(([0],np.diff(mask_dots_)))
-        #         upper_good = np.abs(upper_diff)<=max_dist
-        #         (mask_peaks.T)[i][(bad_diff)&(~upper_good)] = np.nan
-        #         for col in np.where(upper_good&bad_diff)[0]:
-        #             # print(col)
-        #             (mask_peaks.T)[i:,col] = np.roll((mask_peaks.T)[i:,col], shift=-1)
-        # for i,mask_dots in enumerate(mask_peaks.T):
-        #     diff = np.concatenate(([0],np.diff((mask_peaks.T)[i])))
-        #     bad_diff = np.abs(diff)>max_dist
-        #     (mask_peaks.T)[i][bad_diff] = np.nan
-            
-        # for i in range(1,len(mask_peaks.T)-1):
-        #     current_group = mask_peaks.T[i]
-        #     prev_group = mask_peaks.T[i-1]
-        #     next_group = mask_peaks.T[i+1]
-            
-        #     for j,peak in enumerate(current_group):
-        #         if np.isnan(peak):
-        #             continue
-                
-        #         dist_to_prev = np.abs(prev_group-peak)
-        #         dist_to_next = np.abs(next_group-peak)
-                
-        #         # peak closer to a peak in the previous group
-        #         if np.any(dist_to_prev<=max_dist) and np.min(dist_to_prev)==np.min(dist_to_prev[dist_to_prev<=max_dist]):
-        #             closest_peak_idx = np.argmin(dist_to_prev)
-        #             mask_peaks.T[i][j] = prev_group[closest_peak_idx]
-
-        #         # peak closer to a peak in the next group
-        #         elif np.any(dist_to_next<=max_dist) and np.min(dist_to_next)==np.min(dist_to_next[dist_to_next<=max_dist]):
-        #             closest_peak_idx = np.argmin(dist_to_next)
-        #             mask_peaks.T[i][j] = next_group[closest_peak_idx]
-        # for i,mask_dots in enumerate(mask_peaks.T):
-        #     diff = np.concatenate(([0],np.diff((mask_peaks.T)[i])))
-        #     bad_diff = np.abs(diff)>max_dist
-        #     (mask_peaks.T)[i][bad_diff] = np.nan
-
-
-        
-        # for i,mask_dots in enumerate(mask_peaks.T):
-        #     initmask = ~np.isnan(mask_dots)
-        #     # initmask &= ((np.concatenate(([0],np.diff(mask_dots)))<1.*np.nanstd(np.diff(mask_dots)))&
-        #     #              (np.concatenate(([0],np.diff(mask_dots)))>-1.*np.nanstd(np.diff(mask_dots))))
-        #     x = np.arange(0,flat_data.shape[1],3)[initmask]
-        #     mask_dots = mask_dots[initmask]
-
-        #     rand_fits = []
-        #     rand_masks = []
-        #     rand_polymasks = []
-        #     rand_stds = []
-        #     for j in range(50):
-        #         rand = np.array([True]*round(0.75*len(mask_dots))+[False]*round(0.25*len(mask_dots)))
-        #         np.random.shuffle(rand)
-        #         polymask, cont_fit = ifum_utils.sigma_clip(x[rand],mask_dots[rand],deg=deg,weight=np.ones_like(x[rand]),sigma=1,iter=5,include=0.5)
-        #         rand_fits.append(cont_fit)
-        #         rand_masks.append(rand)
-        #         rand_polymasks.append(polymask)
-        #         rand_stds.append(np.std(mask_dots[rand][polymask]-np.poly1d(cont_fit)(x[rand][polymask])))
-        #     cont_fit = rand_fits[np.argmin(rand_stds)]
-        #     randmask = rand_masks[np.argmin(rand_stds)]
-        #     polymask = rand_polymasks[np.argmin(rand_stds)]
-
-            # cont_fit = np.polyfit(x,mask_dots,deg)
-            # # print(i,np.std(mask_dots-np.poly1d(cont_fit)(x)))
-            # try:
-            #     for j in range(20):
-            #         polymask = ((mask_dots<np.poly1d(cont_fit)(x)+0.5*np.std(np.poly1d(cont_fit)(x)))&
-            #                     (mask_dots>np.poly1d(cont_fit)(x)-0.5*np.std(np.poly1d(cont_fit)(x))))
-            #         cont_fit = np.polyfit(x[polymask],mask_dots[polymask],deg)
-            # except:
-            #     # plt.title(i)
-            #     # plt.scatter(x,mask_dots,alpha=0.25)
-            #     # plt.scatter(x[polymask],mask_dots[polymask],alpha=0.25)
-            #     # plt.plot(x,np.poly1d(cont_fit)(x),label=i,alpha=0.5,lw=0.75)
-            #     # plt.show()
-            #     cont_fit = cont_fit
-
-            # if np.std(np.poly1d(cont_fit)(x[randmask][polymask])-mask_dots[randmask][polymask])>3:
-            #     plt.title(i)
-            #     plt.scatter(x,mask_dots,alpha=0.25)
-            #     plt.scatter(x[randmask][polymask],mask_dots[randmask][polymask],alpha=0.25)
-            #     plt.plot(x,np.poly1d(cont_fit)(x),label=i,alpha=0.5,lw=0.75)
-            #     plt.show(block=False)
-            #     plt.pause(1)
-            #     plt.close()
-
-            # if np.std(mask_dots-np.poly1d(cont_fit)(x))>1:
-            #     plt.title(i)
-            #     plt.scatter(x,(old_mask_peaks.T)[i][initmask],alpha=0.25,color="red",marker="x")
-            # plt.scatter(x,mask_dots,alpha=0.05)
-            #     plt.scatter(x[polymask],mask_dots[polymask],alpha=0.25)
-            # plt.plot(x,np.poly1d(cont_fit)(x),label=i,alpha=0.5,lw=0.75)
-            # plt.text(x[0],np.poly1d(cont_fit)(x)[0],str(i+1),va="center",ha="center",color="orange")
-            # if i%10==0:
-            #     plt.legend()
-            #     plt.show()
-            #     plt.show()
-            # mask_polys[i] = cont_fit
-        # plt.legend()
-
-        # 2nd run!
-        # for i,mask_dots in enumerate(mask_peaks.T):
-        #     initmask = ~np.isnan(mask_dots)
-        #     x = np.arange(0,flat_data.shape[1],3)
-        #     initmask &= (np.abs(mask_dots-np.poly1d(mask_polys_0[i])(x))<10)
-        #     x = x[initmask]
-        #     mask_dots = mask_dots[initmask]
-
-        #     polymask, cont_fit = ifum_utils.sigma_clip(x,mask_dots,deg,weight=np.ones_like(x),sigma=1,iter=20,include=0.5)
-
-        #     # cont_fit = np.polyfit(x,mask_dots,deg)
-        #     # # print(i,np.std(mask_dots-np.poly1d(cont_fit)(x)))
-        #     # try:
-        #     #     for j in range(20):
-        #     #         polymask = ((mask_dots<np.poly1d(cont_fit)(x)+0.5*np.std(np.poly1d(cont_fit)(x)))&
-        #     #                     (mask_dots>np.poly1d(cont_fit)(x)-0.5*np.std(np.poly1d(cont_fit)(x))))
-        #     #         cont_fit = np.polyfit(x[polymask],mask_dots[polymask],deg)
-        #     # except:
-        #     #     # plt.title(i)
-        #     #     # plt.scatter(x,mask_dots,alpha=0.25)
-        #     #     # plt.scatter(x[polymask],mask_dots[polymask],alpha=0.25)
-        #     #     # plt.plot(x,np.poly1d(cont_fit)(x),label=i,alpha=0.5,lw=0.75)
-        #     #     # plt.show()
-        #     #     cont_fit = cont_fit
-
-        #     if np.std(np.poly1d(cont_fit)(x)-mask_dots)>1:
-        #         plt.title(i)
-        #         plt.scatter(x,mask_dots,alpha=0.25)
-        #         plt.scatter(x[polymask],mask_dots[polymask],alpha=0.25)
-        #         plt.plot(x,np.poly1d(cont_fit)(x),label=i,alpha=0.5,lw=0.75)
-        #         plt.show(block=False)
-        #         plt.pause(0.5)
-        #         plt.close()
-
-        #     # if np.std(mask_dots-np.poly1d(cont_fit)(x))>1:
-        #     #     plt.title(i)
-        #     #     plt.scatter(x,(old_mask_peaks.T)[i][initmask],alpha=0.25,color="red",marker="x")
-        #     # plt.scatter(x,mask_dots,alpha=0.05)
-        #     #     plt.scatter(x[polymask],mask_dots[polymask],alpha=0.25)
-        #     # plt.plot(x,np.poly1d(cont_fit)(x),label=i,alpha=0.5,lw=0.75)
-        #     # plt.text(x[0],np.poly1d(cont_fit)(x)[0],str(i+1),va="center",ha="center",color="orange")
-        #     # if i%10==0:
-        #     #     plt.legend()
-        #     #     plt.show()
-        #     #     plt.show()
-        #     mask_polys[i] = cont_fit
-
-
-        # plt.show()
         for mask in self.bad_mask:
             mask_polys = np.insert(mask_polys, mask, np.nan, axis=0)
 
-        plt.figure(figsize=(100,100))
-        plt.imshow(flat_data,origin="lower",cmap="Greys_r")
-        for mask in range(self.total_masks//2):
-            mask_poly = mask_polys[mask]
-            x = np.arange(flat_data.shape[1])
-            plt.plot(x,np.poly1d(mask_poly)(x),alpha=0.75,lw=0.75)
-            plt.text(x[0],np.poly1d(mask_poly)(x)[0],str(mask+1),va="center",ha="center",color="orange")
-        plt.axis("off")
-        print("saving...")
-        plt.savefig("out.png",dpi=100,bbox_inches='tight')
-        plt.close()
-        print("saved")
-
         return mask_polys
 
-    def f_2(self,x,a,b,c):
-        return a*x**2+b*x+c
-    
-    def gauss_added(self,x,*params):
-        y = np.zeros_like(x)
-        for i in np.arange(3,len(params),3):
-            y += params[i]*np.exp(-(x-params[i+1])**2/(2*params[i+2]**2))
-        y = y+params[0]*x**2+params[1]*x+params[2]
-        return y
-
-    def generate_bounds(self,value,percentile):
-        if value>0:
-            return value*(1-percentile),value*(1+percentile)
-        else:
-            return value*(1+percentile),value*(1-percentile)
-
     def mask_poly(self, mask_polys, n) -> None:
-        flat_data = fits.open(self.flatdir)[0].data
+        with fits.open(self.flatdir) as flatf:
+            flat_data = flatf[0].data
         flat_data = scipy.ndimage.median_filter(flat_data,size=(1,3))
 
         weight = np.log10(np.median(flat_data,axis=0))
@@ -371,79 +117,23 @@ class Mask():
         masks_split = np.array(np.split(np.arange(self.total_masks//2),self.mask_groups))
 
         x_s = lines
-        bad_lines = []
+        multi_fits = []
         for x in x_s:            
-            cutoffs = [5]
-            for i in np.arange(1,len(masks_split)):
-                first = mask_polys[masks_split[i-1]][~np.isnan(mask_polys[masks_split[i-1]]).any(axis=1)][-1]
-                last = mask_polys[masks_split[i]][~np.isnan(mask_polys[masks_split[i]]).any(axis=1)][0]
-                cutoffs.append(int((np.poly1d(first)(x)+np.poly1d(last)(x))/2))
-            cutoffs.append(flat_data.shape[0]-5)
-            cutoffs = np.array(cutoffs)
-            
-            continuum,_ = scipy.optimize.curve_fit(self.f_2,cutoffs[0::6],flat_data[cutoffs[0::6],x])
-            # DOUBLE CHECK IF 0::6 WORKS FOR NON-STD
+            multi_fits.append(
+                multi_gauss_fit(x,mask_polys,masks_split,flat_data,self.bad_mask)
+            )
 
-            try:
-                centers = []
-                sigmas = []
-                amps = []
-                for i,mask_group in enumerate(masks_split):
-                    p0 = []
-                    lbounds = []
-                    hbounds = []
-                    
-                    # append quadratic shift guess
-                    p0.append(continuum[0])
-                    l,h = self.generate_bounds(continuum[0],.3)
-                    lbounds.append(l)
-                    hbounds.append(h)
-                    p0.append(continuum[1])
-                    l,h = self.generate_bounds(continuum[1],.3)
-                    lbounds.append(l)
-                    hbounds.append(h)
-                    p0.append(continuum[2])
-                    lbounds.append(-np.inf)
-                    hbounds.append(np.inf)
-
-                    for mask in mask_group:
-                        if mask not in self.bad_mask:
-                            # append amplitude guess
-                            p0.append(abs(flat_data[int(np.round(np.poly1d(mask_polys[mask])(x))),x]-self.f_2(int(np.round(np.poly1d(mask_polys[mask])(x))),*continuum)))
-                            lbounds.append(0)
-                            hbounds.append(np.max(flat_data[cutoffs[i]:cutoffs[i+1],x])*2)
-                            # append center guess
-                            p0.append(np.poly1d(mask_polys[mask])(x))
-                            lbounds.append(np.poly1d(mask_polys[mask])(x)-2) # +/- 2 pixels from first guess
-                            hbounds.append(np.poly1d(mask_polys[mask])(x)+2)
-                            # append sigma guess
-                            p0.append(3.)
-                            lbounds.append(1.5)
-                            hbounds.append(5.5)
-                        
-                    popt,_ = scipy.optimize.curve_fit(self.gauss_added,np.arange(cutoffs[i],cutoffs[i+1]),flat_data[cutoffs[i]:cutoffs[i+1],x],p0=p0,bounds=(lbounds,hbounds),nan_policy="omit",method="trf")
-
-                    center = np.array(popt[3:][1::3])
-                    sigma = np.array(popt[3:][2::3])
-                    amp = np.array(popt[3:][0::3])
-
-                    if np.intersect1d(self.bad_mask,mask_group).size > 0:
-                        _, _, ind2 = np.intersect1d(self.bad_mask,mask_group,return_indices=True)
-                        for mask_ in ind2:
-                            center = np.insert(center, mask_, np.nan, axis=0)
-                            sigma = np.insert(sigma, mask_, np.nan, axis=0)
-                            amp = np.insert(amp, mask_, np.nan, axis=0)
-
-                    centers.append(center)
-                    sigmas.append(sigma)
-                    amps.append(amp)
-
+        print("submitted")
+        
+        bad_lines = []
+        for i,future in enumerate(multi_fits):
+            if future.result() is None:
+                bad_lines.append(x_s[i])
+            else:
+                centers,sigmas,amps = future.result()
                 gauss_centers_full = np.vstack((gauss_centers_full,np.array(centers).flatten()))
                 gauss_sigmas_full = np.vstack((gauss_sigmas_full,np.array(sigmas).flatten()))
                 gauss_amps_full = np.vstack((gauss_amps_full,np.array(amps).flatten()))
-            except:
-                bad_lines.append(x)
-                print("bad fit at x=",x)
 
         save_dict = {'x': x_s[np.isin(x_s, bad_lines, invert=True)],
                      'centers': gauss_centers_full,
@@ -451,6 +141,8 @@ class Mask():
                      'amps': gauss_amps_full}
 
         np.savez(self.datadir, **save_dict)
+
+        return None
 
     def plot_trace_fits(self,center_deg,sigma_deg) -> None:
         npzfile = np.load(self.datadir)
@@ -516,9 +208,9 @@ class Mask():
             save_dir = self.maskdir
             traces_sigma = npzfile["traces_sigma"]   
         else:
-            file = os.path.join(os.path.relpath("out"),mode+self.color+"_trace_fits.npz")
+            file = os.path.join(os.path.abspath("out"),mode+self.color+"_trace_fits.npz")
             npzfile = np.load(file)
-            save_dir = os.path.join(os.path.relpath("out"),mode+self.color+"_mask.fits")
+            save_dir = os.path.join(os.path.abspath("out"),mode+self.color+"_mask.fits")
             init_traces = npzfile["init_traces"]
             traces_sigma = npzfile["init_traces_sigma"]
         traces = npzfile["traces"]
@@ -527,7 +219,7 @@ class Mask():
         if mode!="flat" and np.array_equiv(traces,init_traces): # if traces are the same, do not waste time creating mask. instead use arc's
             fits.writeto(save_dir, data=fits.open(self.maskdir)[0].data, overwrite=True)
         elif copy is not None and np.array_equiv(traces,init_traces):
-            arcmask = os.path.join(os.path.relpath("out"),copy+self.color+"_mask.fits")
+            arcmask = os.path.join(os.path.abspath("out"),copy+self.color+"_mask.fits")
             fits.writeto(save_dir, data=fits.open(arcmask)[0].data, overwrite=True)
         else:
             new_mask = np.zeros(flat_data.shape)
@@ -548,11 +240,11 @@ class Mask():
 
     
     def optimize_trace(self,filename,sig_mult,cmrays=False,expected_peaks=30,optimize=True) -> None:
-        arcdir = os.path.join(os.path.relpath("out"),filename+self.color+".fits")
+        arcdir = os.path.join(os.path.abspath("out"),filename+self.color+".fits")
         data = fits.open(arcdir)[0].data
 
         if cmrays:
-            cmraydir = os.path.join(os.path.relpath("out"),filename+self.color+"_cmray_mask.fits")
+            cmraydir = os.path.join(os.path.abspath("out"),filename+self.color+"_cmray_mask.fits")
             cmray_data = fits.open(cmraydir)[0].data
 
         mask_data = fits.open(self.maskdir)[0].data
@@ -569,17 +261,17 @@ class Mask():
         
         x = np.arange(0,data.shape[1],1)
         if cmrays: 
-            ref_a = utils.get_spectrum_simple(data,mask_data,1,cmray_data)
+            ref_a = get_spectrum_simple(data,mask_data,1,cmray_data)
             for i,m in enumerate(masks_l):
-                a = utils.get_spectrum_simple(data,mask_data,m,cmray_data)
+                a = get_spectrum_simple(data,mask_data,m,cmray_data)
                 intensities[i] = a
-                lags[i] = utils.get_lag(a,ref_a)
+                lags[i] = get_lag(a,ref_a)
         else:
-            ref_a = utils.get_spectrum_simple(data,mask_data,1)
+            ref_a = get_spectrum_simple(data,mask_data,1)
             for i,m in enumerate(masks_l):
-                a = utils.get_spectrum_simple(data,mask_data,m)
+                a = get_spectrum_simple(data,mask_data,m)
                 intensities[i] = a
-                lags[i] = utils.get_lag(a,ref_a)
+                lags[i] = get_lag(a,ref_a)
 
         norm_intensities = np.empty(intensities.shape)
         for i,intensity in enumerate(intensities):
@@ -614,7 +306,7 @@ class Mask():
             for i,intensity in enumerate(intensities):
                 quad_mask_ = np.intersect1d(np.union1d(quad_mask,quad_mask+int(lags[i])),
                                             np.arange(intensities.shape[1]))
-                quad_lag = utils.get_lag(intensity[quad_mask_],quadrant_ref_a[quad_mask_])
+                quad_lag = get_lag(intensity[quad_mask_],quadrant_ref_a[quad_mask_])
                 quad_lags[i] = quad_lag
                 try:
                     norm_intensities[i] = intensity[quad_mask+quad_lag]
@@ -692,12 +384,12 @@ class Mask():
                         mask_area = ((x)>(peak_xs[peak][i]-(offset+1)))&((x)<(peak_xs[peak][i]+(offset+1)))    
                         mask_area = mask_area&(~np.isnan(intensities[i]))
                         p0 = [0,np.max(intensities[i][mask_area]),np.argmax(intensities[i][mask_area])+np.min(x[mask_area]),offset/3]
-                        popt,_ = scipy.optimize.curve_fit(utils.gauss,x[mask_area],intensities[i][mask_area],p0=p0)                            
+                        popt,_ = scipy.optimize.curve_fit(gauss,x[mask_area],intensities[i][mask_area],p0=p0)                            
                     else:
                         mask_area = x>((~np.isnan(intensities[i])).cumsum(0).argmax(0)-offset*2)
                         mask_area = mask_area&(~np.isnan(intensities[i]))
                         p0 = [0,np.max(intensities[i][mask_area]),np.argmax(intensities[i][mask_area])+np.min(x[mask_area]),offset/3]
-                        popt,_ = scipy.optimize.curve_fit(utils.gauss,x[mask_area],intensities[i][mask_area],p0=p0)
+                        popt,_ = scipy.optimize.curve_fit(gauss,x[mask_area],intensities[i][mask_area],p0=p0)
                     centers[peak][i] = popt[2]
                 except:
                     # print(f"bad 1D peak fit: color {self.color}, mask {mask}, peak {peak}")
@@ -733,7 +425,7 @@ class Mask():
                         var = [0,0,1,a,b,c,0]
                         args = [x0,y0,x_off,y_off,adata_,False]
                         
-                        result = scipy.optimize.minimize(utils.minimize_gauss_2d, var, args=(args))
+                        result = scipy.optimize.minimize(minimize_gauss_2d, var, args=(args))
                         results_arr[i,line] = result.x
                         fit_xs[i,line] = x0+result.x[0]
                         fit_ys[i,line] = y0+result.x[1]
@@ -761,7 +453,7 @@ class Mask():
             for i,mask in enumerate(masks_l):
                 var = [0,0]
                 args = [fit_xs[i],fit_ys[i],traces[int(mask-1)]]
-                result = scipy.optimize.minimize(utils.minimize_poly_dist, var, args=(args))
+                result = scipy.optimize.minimize(minimize_poly_dist, var, args=(args))
                 center_traces[i] = np.polymul(traces[int(mask-1)],result.x)
 
             if np.intersect1d(self.bad_mask,np.arange(self.total_masks//2)).size > 0:
@@ -806,13 +498,13 @@ class Mask():
                      'rotations': rotations,
                      'traces': center_traces}
 
-        np.savez(os.path.join(os.path.relpath("out"),filename+self.color+"_trace_fits.npz"), **save_dict)
+        np.savez(os.path.join(os.path.abspath("out"),filename+self.color+"_trace_fits.npz"), **save_dict)
         
 
 
     def get_rots(self,arcfilename,datafilename,optimize=True) -> None:
-        arc_npz = np.load(os.path.join(os.path.relpath("out"),arcfilename+self.color+"_trace_fits.npz"))
-        data_npz = np.load(os.path.join(os.path.relpath("out"),datafilename+self.color+"_trace_fits.npz"))
+        arc_npz = np.load(os.path.join(os.path.abspath("out"),arcfilename+self.color+"_trace_fits.npz"))
+        data_npz = np.load(os.path.join(os.path.abspath("out"),datafilename+self.color+"_trace_fits.npz"))
         arc_rot = arc_npz["rotations"]
         arc_xs = arc_npz["fit_xs"]
         data_rot = data_npz["rotations"]
@@ -846,13 +538,13 @@ class Mask():
 
         save_dict = dict(data_npz)
         save_dict["rotation_traces"] = rot_fit
-        np.savez(os.path.join(os.path.relpath("out"),datafilename+self.color+"_trace_fits.npz"), **save_dict)
+        np.savez(os.path.join(os.path.abspath("out"),datafilename+self.color+"_trace_fits.npz"), **save_dict)
 
     def _viz(self,datafilename,sig_mult,masks) -> None:
-        data_dir = os.path.join(os.path.relpath("out"),datafilename+self.color+".fits")
+        data_dir = os.path.join(os.path.abspath("out"),datafilename+self.color+".fits")
         data = fits.open(data_dir)[0].data
 
-        data_npz = np.load(os.path.join(os.path.relpath("out"),datafilename+self.color+"_trace_fits.npz"))
+        data_npz = np.load(os.path.join(os.path.abspath("out"),datafilename+self.color+"_trace_fits.npz"))
         sigs = data_npz["init_traces_sigma"]
         traces = data_npz["traces"]
         rots = data_npz["rotation_traces"]
@@ -874,9 +566,9 @@ class Mask():
 
     def _viz_(self,datafilename,color,mask) -> None:
         import os
-        data_file = os.path.join(os.path.relpath("out"),datafilename+color+".fits")
-        # cmray_file = os.path.join(os.path.relpath("out"),datafilename+color+"_cmray_mask.fits")
-        data_npz = np.load(os.path.join(os.path.relpath("out"),datafilename+self.color+"_trace_fits.npz"))
+        data_file = os.path.join(os.path.abspath("out"),datafilename+color+".fits")
+        # cmray_file = os.path.join(os.path.abspath("out"),datafilename+color+"_cmray_mask.fits")
+        data_npz = np.load(os.path.join(os.path.abspath("out"),datafilename+self.color+"_trace_fits.npz"))
 
         data = fits.open(data_file)[0].data
         # cmray_mask = fits.open(cmray_file)[0].data
@@ -911,7 +603,7 @@ class Mask():
         y = np.arange(y0-y_off,y0+y_off+0.9,1.)
         xv,yv = np.meshgrid(x,y)
 
-        gauss_points = utils.gauss_2d(xv,yv,x0+x_,y0+y_,A,a,b,c,H)
+        gauss_points = gauss_2d(xv,yv,x0+x_,y0+y_,A,a,b,c,H)
         image_points = (data__-np.nanmin(data__))/(np.nanmax(data__)-np.nanmin(data__))
 
         res = np.nanmean((image_points-gauss_points)**2)
@@ -967,7 +659,7 @@ class Mask():
         y = np.arange(y0-y_off,y0+y_off+0.9,1.)
         xv,yv = np.meshgrid(x,y)
 
-        gauss_points = utils.gauss_2d(xv,yv,x0+x_,y0+y_,A,a,b,c,H)
+        gauss_points = gauss_2d(xv,yv,x0+x_,y0+y_,A,a,b,c,H)
         image_points = (data__-np.nanmin(data__))/(np.nanmax(data__)-np.nanmin(data__))
 
         res = np.nanmean((image_points-gauss_points)**2)
@@ -1000,7 +692,7 @@ class Mask():
         import os
 
 
-        data_file = os.path.join(os.path.relpath("out"),datafilename+color+".fits")
+        data_file = os.path.join(os.path.abspath("out"),datafilename+color+".fits")
         data = fits.open(data_file)[0].data
         data = data[25:125,850:1250]
 
@@ -1023,7 +715,7 @@ class Mask():
 
         plt.subplot(2,2,4)
 
-        data_file = os.path.join(os.path.relpath("out"),datafilename+color+".fits")
+        data_file = os.path.join(os.path.abspath("out"),datafilename+color+".fits")
         data = fits.open(data_file)[0].data
         data = data[50:125,-500:]
         plt.title("mask 3 (higher λ)",weight="bold")
@@ -1045,3 +737,22 @@ class Mask():
         plt.tight_layout(pad=1)
         # plt.savefig("im06.png",dpi=400,bbox_inches='tight',pad_inches=0.1)
         plt.show()
+
+
+
+@python_app
+def flat_mask_app(mask_args,polydeg=3,sampling=40):
+    mask = Mask(**mask_args)
+    mask_polys0 = mask.first_guess(polydeg)
+    print(mask_polys0.shape,flush=True)
+    mask.mask_poly(mask_polys0,sampling)
+    print("4done",flush=True)
+    return None
+
+@python_app
+def create_flatmask_app(mask_args,center_deg,sigma_deg,sig_mult):
+    mask = Mask(**mask_args)
+    mask.get_flat_traces(center_deg,sigma_deg)
+    mask.create_mask(sig_mult)
+    return None
+

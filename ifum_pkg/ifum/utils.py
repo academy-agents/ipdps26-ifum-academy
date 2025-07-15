@@ -2,7 +2,157 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy
 import scipy.ndimage
+import os
+from astropy.io import fits
+from glob import glob
+from parsl.app.app import python_app
+import re
 from skimage.registration import phase_cross_correlation
+
+def load_files(directory,prefix) -> None:
+    # find the appropriate files
+    files = glob(os.path.join(directory,("*"+prefix+"*.fits")))
+
+    # creates convenient matrix of the files
+    ordered_identity = np.array([["blue1","blue2","blue3","blue4"],
+                                ["red1","red2","red3","red4"]])
+    ordered_files = np.empty((2, 4), dtype="object")
+
+    # assigns files correctly within matrix
+    for file in files:
+        header = fits.open(file)[0].header
+        color,opamp = header["SHOE"],header["OPAMP"]
+        i = 0 if color=="B" else 1 if color=="R" else None
+        j = 0 if opamp==1 else 1 if opamp==2 else 2 if opamp==3 else 3 if opamp==4 else None
+        ordered_files[i,j] = file
+
+    if ordered_identity[ordered_files==None].size != 0:
+        print(f"{len(files)} files",flush=True)
+        print(f"missing files: {ordered_identity[ordered_files==None]}",flush=True)
+        return None
+    else:
+        return ordered_files
+
+def save_file(files,filename,bin_to_2x1=True) -> None:
+    ordered_data = np.empty((2,4), dtype="object")
+    for iy, ix in np.ndindex(files.shape):
+        file = files[iy,ix]
+        header,data = fits.open(file)[0].header,fits.open(file)[0].data
+        x1,x2,y1,y2 = [int(s) for s in re.findall(r'\d+', header["TRIMSEC"])]
+        x1 -= 1
+        y1 -= 1
+
+        # subtracts the mean of bias x slices from the data
+        ordered_data[iy,ix] = data[y1:y2,x1:x2] - np.repeat(np.array([np.mean(data[y1:y2,x2:],axis=1)]).T,data[y1:y2,x1:x2].shape[1],axis=1)
+        if bin_to_2x1 and header["BINNING"]=='1x1':
+            ordered_data[iy,ix] = ordered_data[iy,ix][:,0::2]+ordered_data[iy,ix][:,1::2]
+
+    # stack images
+    total_b = np.vstack((np.hstack((ordered_data[0][3],np.flip(ordered_data[0][2], axis=1))),
+                            np.hstack((np.flip(ordered_data[0][0], axis=0),np.flip(ordered_data[0][1], axis=(0,1))))))
+    total_r = np.vstack((np.hstack((ordered_data[1][3],np.flip(ordered_data[1][2], axis=1))),
+                            np.hstack((np.flip(ordered_data[1][0], axis=0),np.flip(ordered_data[1][1], axis=(0,1))))))
+
+    # save images as fits files
+    fits.writeto(os.path.join(os.path.relpath("out"),filename+"_withbias_b.fits"), data=total_b, overwrite=True)
+    fits.writeto(os.path.join(os.path.relpath("out"),filename+"_withbias_r.fits"), data=total_r, overwrite=True)
+
+
+def f_2(x,a,b,c):
+    return a*x**2+b*x+c
+
+def generate_bounds(value,percentile):
+    if value>0:
+        return value*(1-percentile),value*(1+percentile)
+    else:
+        return value*(1+percentile),value*(1-percentile)
+
+def gauss_added(x,*params):
+    y = np.zeros_like(x)
+    for i in np.arange(3,len(params),3):
+        y += params[i]*np.exp(-(x-params[i+1])**2/(2*params[i+2]**2))
+    y = y+params[0]*x**2+params[1]*x+params[2]
+    return y
+
+@python_app
+def multi_gauss_fit(x,mask_polys,masks_split,flat_data,bad_mask):
+    import numpy as np
+    import scipy
+
+    cutoffs = [5]
+    for i in np.arange(1,len(masks_split)):
+        first = mask_polys[masks_split[i-1]][~np.isnan(mask_polys[masks_split[i-1]]).any(axis=1)][-1]
+        last = mask_polys[masks_split[i]][~np.isnan(mask_polys[masks_split[i]]).any(axis=1)][0]
+        cutoffs.append(int((np.poly1d(first)(x)+np.poly1d(last)(x))/2))
+    cutoffs.append(flat_data.shape[0]-5)
+    cutoffs = np.array(cutoffs)
+    
+    continuum,_ = scipy.optimize.curve_fit(f_2,cutoffs[0::6],flat_data[cutoffs[0::6],x])
+
+    try:
+        centers = []
+        sigmas = []
+        amps = []
+        for i,mask_group in enumerate(masks_split):
+            p0 = []
+            lbounds = []
+            hbounds = []
+            
+            # append quadratic shift guess
+            p0.append(continuum[0])
+            l,h = generate_bounds(continuum[0],.3)
+            lbounds.append(l)
+            hbounds.append(h)
+            p0.append(continuum[1])
+            l,h = generate_bounds(continuum[1],.3)
+            lbounds.append(l)
+            hbounds.append(h)
+            p0.append(continuum[2])
+            lbounds.append(-np.inf)
+            hbounds.append(np.inf)
+
+            for mask in mask_group:
+                if mask not in bad_mask:
+                    # append amplitude guess
+                    p0.append(abs(flat_data[int(np.round(np.poly1d(mask_polys[mask])(x))),x]-f_2(int(np.round(np.poly1d(mask_polys[mask])(x))),*continuum)))
+                    lbounds.append(0)
+                    hbounds.append(np.max(flat_data[cutoffs[i]:cutoffs[i+1],x])*2)
+                    # append center guess
+                    p0.append(np.poly1d(mask_polys[mask])(x))
+                    lbounds.append(np.poly1d(mask_polys[mask])(x)-2) # +/- 2 pixels from first guess
+                    hbounds.append(np.poly1d(mask_polys[mask])(x)+2)
+                    # append sigma guess
+                    p0.append(3.)
+                    lbounds.append(1.5)
+                    hbounds.append(5.5)
+                
+            popt,_ = scipy.optimize.curve_fit(gauss_added,np.arange(cutoffs[i],cutoffs[i+1]),flat_data[cutoffs[i]:cutoffs[i+1],x],p0=p0,bounds=(lbounds,hbounds),nan_policy="omit",method="trf")
+
+            center = np.array(popt[3:][1::3])
+            sigma = np.array(popt[3:][2::3])
+            amp = np.array(popt[3:][0::3])
+
+            if np.intersect1d(bad_mask,mask_group).size > 0:
+                _, _, ind2 = np.intersect1d(bad_mask,mask_group,return_indices=True)
+                for mask_ in ind2:
+                    center = np.insert(center, mask_, np.nan, axis=0)
+                    sigma = np.insert(sigma, mask_, np.nan, axis=0)
+                    amp = np.insert(amp, mask_, np.nan, axis=0)
+
+            centers.append(center)
+            sigmas.append(sigma)
+            amps.append(amp)
+
+        return np.array(centers).flatten(),np.array(sigmas).flatten(),np.array(amps).flatten()
+    except:
+        print("bad fit",flush=True)
+        return None
+
+
+
+
+
+
 
 def gauss_background(x,*var):
     H,H1,a,x0,sigma = var

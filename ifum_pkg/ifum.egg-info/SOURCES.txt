@@ -2,7 +2,6 @@ README.md
 pyproject.toml
 ifum/__init__.py
 ifum/calibrate.py
-ifum/config.py
 ifum/helper.py
 ifum/hexagonify.py
 ifum/maskopt.py

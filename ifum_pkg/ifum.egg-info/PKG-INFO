@@ -14,5 +14,6 @@ Requires-Dist: jupyter
 Requires-Dist: parsl
 Requires-Dist: astropy
 Requires-Dist: scipy
+Requires-Dist: scikit-image
 
 ...
