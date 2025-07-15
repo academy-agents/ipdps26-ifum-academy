@@ -2,11 +2,11 @@ import numpy as np
 import scipy
 import math
 import os
-import ifum_code.ifum.utils as utils
+from .utils import *
 from astropy.io import fits
 from astropy.convolution import Gaussian1DKernel, convolve
 import matplotlib.pyplot as plt
-import seaborn as sns
+from parsl.app.app import python_app
 
 # https://cdsarc.cds.unistra.fr/viz-bin/cat/J/A+A/407/1157#/browse
 
@@ -240,11 +240,11 @@ class Rectify():
         if cmrays:
             cmray_data = fits.open(self.cmraymask)[0].data
             for i,m in enumerate(masks_l):
-                a = utils.get_spectrum_simple_withnan(data,mask_data,m,cmray_data)
+                a = get_spectrum_simple_withnan(data,mask_data,m,cmray_data)
                 intensities[i] = a
         else:
             for i,m in enumerate(masks_l):
-                a = utils.get_spectrum_simple(data,mask_data,m)
+                a = get_spectrum_simple(data,mask_data,m)
                 intensities[i] = a
         x = np.arange(data.shape[1])
 
@@ -260,7 +260,7 @@ class Rectify():
             # get first lag, so that quadrant areas are optimized
             lags_0 = np.empty(intensities.shape[0])
             for i,intensity in enumerate(intensities):
-                lags_0[i] = utils.get_lag(intensity,intensities[0])
+                lags_0[i] = get_lag(intensity,intensities[0])
             quadrants = 4
             expectation = (centers.shape[0]//quadrants)*2 # right now, doubles!
             # centers = np.empty((0,centers.shape[1]))
@@ -279,7 +279,7 @@ class Rectify():
                     for i,intensity in enumerate(intensities):
                         quad_mask_ = np.intersect1d(np.union1d(quad_mask, quad_mask+int(lags_0[i])),
                                                     np.arange(intensities.shape[1]))
-                        quad_lag = utils.get_lag(intensity[quad_mask_],quadrant_ref_a[quad_mask_])
+                        quad_lag = get_lag(intensity[quad_mask_],quadrant_ref_a[quad_mask_])
                         quad_lags[i] = quad_lag
                         try:
                             norm_intensities[i] = intensity[quad_mask+quad_lag]
@@ -342,12 +342,12 @@ class Rectify():
                             # plt.show()
 
                             p0 = [0,np.max(intensities[i][mask_area]),np.argmax(intensities[i][mask_area])+np.min(x[mask_area]),offset/3]
-                            popt,pcov = scipy.optimize.curve_fit(utils.gauss,x[mask_area],intensities[i][mask_area],p0=p0)                            
+                            popt,pcov = scipy.optimize.curve_fit(gauss,x[mask_area],intensities[i][mask_area],p0=p0)                            
                         else:
                             mask_area = x>((~np.isnan(intensities[i])).cumsum(0).argmax(0)-offset*2)
                             mask_area = mask_area&(~np.isnan(intensities[i]))
                             p0 = [0,np.max(intensities[i][mask_area]),np.argmax(intensities[i][mask_area])+np.min(x[mask_area]),offset/3]
-                            popt,pcov = scipy.optimize.curve_fit(utils.gauss,x[mask_area],intensities[i][mask_area],p0=p0)
+                            popt,pcov = scipy.optimize.curve_fit(gauss,x[mask_area],intensities[i][mask_area],p0=p0)
                         x_err = np.sqrt(np.diag(pcov))[3]
                         
                         if x_err < np.median(np.poly1d(traces_sigma[int(mask-1)])(np.arange(data.shape[0])))/3:
@@ -399,13 +399,13 @@ class Rectify():
             # bad_fits = (~np.isin(masks_l, (self.bad_mask+1)))&(~np.isnan(centers[i]))
             # bad_fits = bad_fits&(abs((centers[i]-(np.poly1d(np.polyfit(masks_l[bad_fits],centers[i][bad_fits],3))(masks_l))))<3)
 
-            poly_sig_mask, fit = utils.sigma_clip(masks_l[bad_fits],
+            poly_sig_mask, fit = sigma_clip(masks_l[bad_fits],
                                                        centers[i][bad_fits],
                                                        3,weight=np.ones_like(masks_l[bad_fits]),
                                                        sigma=3,iter=10,include=0.9)
             bad_fits[bad_fits] = poly_sig_mask
             # do it again, in case not all points were catched for a good line (high outliers can still come about with high sigma)
-            poly_sig_mask, fit = utils.sigma_clip(masks_l[bad_fits],
+            poly_sig_mask, fit = sigma_clip(masks_l[bad_fits],
                                                        centers[i][bad_fits],
                                                        3,weight=np.ones_like(masks_l[bad_fits]),
                                                        sigma=1.5,iter=10,include=0.9)
@@ -433,15 +433,15 @@ class Rectify():
 
                     # segment_fit = np.polyfit(masks_split[j][bad_fits_s[j]],centers_split[j,i][bad_fits_s[j]],1)
 
-                    group_mask, segment_fit = utils.sigma_clip(masks_split[j][bad_fits_s[j]],
+                    group_mask, segment_fit = sigma_clip(masks_split[j][bad_fits_s[j]],
                                                                     centers_split[j,i][bad_fits_s[j]],
                                                                     1,weight=np.ones_like(masks_split[j][bad_fits_s[j]]),
                                                                     sigma=1,iter=10)
 
-                    res = scipy.optimize.minimize(utils.miniminize_double_linear_func,
+                    res = scipy.optimize.minimize(miniminize_double_linear_func,
                                 x0 = np.array([segment_fit[0],segment_fit[1],segment_fit[1]]), 
                                 args = np.array([masks_split[j][bad_fits_s[j]][group_mask],centers_split[j,i][bad_fits_s[j]][group_mask]]))
-                    y_fit = utils.double_linear_func(res.x,masks_split[j])
+                    y_fit = double_linear_func(res.x,masks_split[j])
 
                     # plt.scatter(masks_split[j][bad_fits_s[j]],centers_split[j,i][bad_fits_s[j]],color="red")
                     # plt.scatter(masks_split[j][bad_fits_s[j]][group_mask],centers_split[j,i][bad_fits_s[j]][group_mask],color="blue")
@@ -465,7 +465,7 @@ class Rectify():
         for mask in masks_l:
             # plt.scatter(full_shifts[:,mask-1],full_shifts[:,0]-full_shifts[:,mask-1])
 
-            _, fit = utils.sigma_clip(full_shifts[:,mask-1],full_shifts[:,0]-full_shifts[:,mask-1],
+            _, fit = sigma_clip(full_shifts[:,mask-1],full_shifts[:,0]-full_shifts[:,mask-1],
                                            3,weight=np.ones_like(full_shifts[:,mask-1]),sigma=3,iter=10)
 
             # fit = np.polyfit(full_shifts[:,mask-1],full_shifts[:,0]-full_shifts[:,mask-1],2)
@@ -538,7 +538,7 @@ class Rectify():
         delta_func[np.arange(len(delta_func))[self.sky_lines_guess_]] = 1
         gauss_kernal = Gaussian1DKernel(stddev=1)
         delta_func = convolve(delta_func,gauss_kernal)
-        lag = utils.get_lag(data_intensities[0],delta_func)
+        lag = get_lag(data_intensities[0],delta_func)
         sky_lines_guess = self.sky_lines_guess_+lag
 
         masks_l = np.arange(self.total_masks//2)+1
@@ -556,7 +556,7 @@ class Rectify():
                         mask_area = mask_area&(~np.isnan(data_intensities[m-1]))
                         try:
                             p0 = [0,np.nanmax(data_intensities[m-1][mask_area]),np.argmax(data_intensities[m-1][mask_area])+np.nanmin(data_xs[m-1][mask_area]),5/3]
-                            popt,pcov = scipy.optimize.curve_fit(utils.gauss,data_xs[m-1][mask_area],data_intensities[m-1][mask_area],p0=p0)
+                            popt,pcov = scipy.optimize.curve_fit(gauss,data_xs[m-1][mask_area],data_intensities[m-1][mask_area],p0=p0)
                             perr = np.sqrt(np.diag(pcov))
                             gauss_x = np.linspace(data_xs[m-1][mask_area][0],data_xs[m-1][mask_area][-1],100)
                             sky_lines_x.append(popt[2])
@@ -577,7 +577,7 @@ class Rectify():
             stds = np.nanmedian(sky_lines_errs,axis=0)
             # print(stds)
             stds[~np.isfinite(stds)] = 2*np.nanmax(stds[np.isfinite(stds)])
-            stds = 1-utils.normalize(stds)
+            stds = 1-normalize(stds)
 
             # fit, put arc lines on top, then fit with all
             best_fit = np.polyfit(self.sky_lines,centers,3,w=stds)
@@ -637,7 +637,7 @@ class Rectify():
                     mask_area = mask_area&(~np.isnan(arc_intensities[m-1]))
                     try:
                         p0 = [0,np.nanmax(arc_intensities[m-1][mask_area]),np.nanargmax(arc_intensities[m-1][mask_area])+np.nanmin(arc_xs[m-1][mask_area]),5/3]
-                        popt,pcov = scipy.optimize.curve_fit(utils.gauss,arc_xs[m-1][mask_area],arc_intensities[m-1][mask_area],p0=p0)
+                        popt,pcov = scipy.optimize.curve_fit(gauss,arc_xs[m-1][mask_area],arc_intensities[m-1][mask_area],p0=p0)
                         perr = np.sqrt(np.diag(pcov))
                         gauss_x = np.linspace(arc_xs[m-1][mask_area][0],arc_xs[m-1][mask_area][-1],100)
                         arc_lines_x.append(popt[2])
@@ -653,7 +653,7 @@ class Rectify():
         arc_centers = np.average(arc_lines_xs,axis=0,weights=1./np.array(arc_lines_errs))
         arc_stds = np.nanmedian(arc_lines_errs,axis=0)#np.nanstd(arc_lines_xs,axis=0)*np.nanmean(arc_lines_errs,axis=0)
         arc_stds[~np.isfinite(arc_stds)] = 2*np.nanmax(arc_stds[np.isfinite(arc_stds)])
-        arc_stds = 1-utils.normalize(arc_stds)
+        arc_stds = 1-normalize(arc_stds)
     
 
 
@@ -734,7 +734,7 @@ class Rectify():
         full_stds = np.nan_to_num(full_stds)
 
         # full_best_fit = np.polyfit(full_centers,full_wls,deg)#,w=full_stds)
-        full_best_fit, _ = utils.ransac(full_centers,full_wls,deg,max_iter=1000,threshold=0.1)
+        full_best_fit, _ = ransac(full_centers,full_wls,deg,max_iter=1000,threshold=0.1)
 
         # plt.figure().set_facecolor("lightgray")
         # # plt.title(f"{data_filename+color} RESIDUALS")
@@ -778,10 +778,10 @@ class Rectify():
         plt.xlabel("wavelength")
         c = plt.get_cmap("viridis")(np.arange(276)/276)
         for m in range(276):
-            plt.plot(data_wls[m],utils.normalize(data_intensities[m]),color=c[m],alpha=0.05)
+            plt.plot(data_wls[m],normalize(data_intensities[m]),color=c[m],alpha=0.05)
         c = plt.get_cmap("magma")(np.arange(276)/276)
         for m in range(276):
-            plt.plot(arc_wls[m],utils.normalize(arc_intensities[m]),color=c[m],alpha=0.05)
+            plt.plot(arc_wls[m],normalize(arc_intensities[m]),color=c[m],alpha=0.05)
         # plt.show()
 
     def _viz_wl(self,prelim_calib=None) -> None:
@@ -794,8 +794,8 @@ class Rectify():
         mask_data = fits.open(maskdir)[0].data
 
         m = 1
-        intensity_arc = utils.get_spectrum_simple_withnan(arc_data,arc_mask_data,m)
-        intensity = utils.get_spectrum_simple_withnan(data,mask_data,m,fits.open(self.cmraymask)[0].data)
+        intensity_arc = get_spectrum_simple_withnan(arc_data,arc_mask_data,m)
+        intensity = get_spectrum_simple_withnan(data,mask_data,m,fits.open(self.cmraymask)[0].data)
         x = np.arange(data.shape[1])
 
         if prelim_calib is None:
@@ -812,8 +812,8 @@ class Rectify():
             plt.text(line,0.05, 
                     str(f"arc {line:.3f}Å"), color="black",
                     ha='center',va='top',fontsize=8,rotation='vertical')
-        plt.plot(np.poly1d(prelim_calib)(x),utils.normalize(intensity_arc),color="blue",alpha=0.5)
-        plt.plot(np.poly1d(prelim_calib)(x),utils.normalize(intensity),color="darkorange",alpha=0.5)
+        plt.plot(np.poly1d(prelim_calib)(x),normalize(intensity_arc),color="blue",alpha=0.5)
+        plt.plot(np.poly1d(prelim_calib)(x),normalize(intensity),color="darkorange",alpha=0.5)
         plt.show()
 
     def viz_rect(self):
@@ -868,3 +868,20 @@ class Rectify():
         plt.tight_layout()
         plt.savefig("testim.png",dpi=1500,bbox_inches='tight',pad_inches=0.1)
         plt.close()
+
+
+
+@python_app
+def optimize_center_app(rectify_args,arc_or_data,fix_sparse):
+    rectify = Rectify(**rectify_args)
+    return rectify.optimize_centers(arc_or_data=arc_or_data,fix_sparse=fix_sparse)
+
+@python_app
+def rectify_app(rectify_args,arc_or_data):
+    rectify = Rectify(**rectify_args)
+    return rectify.rectify(arc_or_data)
+
+@python_app
+def calib_app(rectify_args,use_sky):
+    rectify = Rectify(**rectify_args)
+    return rectify.calib(use_sky=use_sky)
