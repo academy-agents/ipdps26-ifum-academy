@@ -24,7 +24,7 @@ class Stitch():
     def load_and_save(self,bin_to_2x1=True) -> None:
         files = load_files(self.directory,self.filename)
         save_file(files,self.filename,bin_to_2x1)
-        return None
+        return self.filename
 
     def bias_sub(self) -> np.ndarray:
         import os
@@ -54,6 +54,9 @@ class Stitch():
         return internal_noise
 
     def write_noise(self, internal_noise, files) -> None:
+        import os
+        from astropy.io import fits
+
         for file in files:
             # data_file = os.path.join(os.path.abspath("out"),self.filename+"_withbias_"+self.color+".fits")
             data_file = os.path.join(os.path.abspath("out"),file+"_withbias_"+self.color+".fits")
@@ -126,11 +129,12 @@ class Stitch():
         return data_n*scale
 
     def cmray_mask(self, data_files) -> None:
-        import glob
+        import os
         from astropy.io import fits
         import numpy as np
-        from astropy.convolution import Gaussian2DKernel, convolve
-
+        from scipy.ndimage import convolve
+        from astropy.convolution import Gaussian2DKernel
+        import glob
 
         # area is size of returned array
         # cutoff ignores pixels >+/<- that value
@@ -195,6 +199,9 @@ class Stitch():
         cmray_conv_mask = (cmray_conv>(np.median(cmray_conv.flatten())+3*np.std(cmray_conv.flatten())))
         fits.writeto(os.path.join(os.path.abspath("out"),self.datafilename+self.color+"_cmray_mask.fits"), data=1.*cmray_conv_mask, overwrite=True)
 
+
+
+import concurrent.futures
     
 
 @python_app
@@ -203,21 +210,30 @@ def load_and_save_app(stitch_args, bin_to_2x1=True):
     return stitch.load_and_save(bin_to_2x1)
 
 @python_app
-def combined_bias_app(dep_futures, stitch_args, files):
-    from astropy.io import fits
+def combined_bias_app(dep_futures = [], stitch_args = None, files = None):
     import os
+    from astropy.io import fits
+    import numpy as np
 
-    stitch_args_ = dict(stitch_args)
-    files_ = list(files)
+    stitch_args_copy = dict(stitch_args)
+    files_copy = list(files)
 
-    [f.result() for f in dep_futures]
+    [dep.result() for dep in dep_futures]
 
-    stitch = Stitch(**stitch_args_)
+    stitch = Stitch(**stitch_args_copy)
 
     internal_bias = stitch.bias_sub()
-    fits.writeto(filename=os.path.join(os.path.abspath("out"),stitch.flatfilename+"_biasfilter_"+stitch.color+".fits"), data=internal_bias, overwrite=True)
 
-    stitch.write_noise(internal_bias, files_)
+    fits.writeto(
+        filename=os.path.join(
+            os.path.abspath("out"),
+            stitch_args_copy["flatfilename"]+"_biasfilter_"+stitch_args_copy["color"]+".fits"
+            ),
+        data=internal_bias,
+        overwrite=True
+    )
+
+    stitch.write_noise(internal_bias, files_copy)
 
     return None
 

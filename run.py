@@ -8,7 +8,9 @@ import sys
 import parsl
 import ifum
 import config
+from parsl.app.app import python_app
 
+# import pickle #temp
 
 if __name__ == "__main__":
     start = time.time()
@@ -83,27 +85,28 @@ if __name__ == "__main__":
             "arcfilename": None,
             "flatfilename": None
         }
-        stitch_apps.append(ifum.load_and_save_app(stitch_args,bin_to_2x1))
-    concurrent.futures.wait(stitch_apps)
+        future = ifum.load_and_save_app(
+            stitch_args,
+            bin_to_2x1
+        )
+        stitch_apps.append(future)
+    concurrent.futures.wait(stitch_apps, return_when="ALL_COMPLETED")
     # for future in stitch_apps:
     #     future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | stitched files saved", flush=True)
 
+    stitch_future_map = {fname: future for fname, future in zip(stitch_files, stitch_apps)}
 
     # 2-BIAS: solve and save the bias
     bias_files = np.unique(flat_filenames)
     bias_apps = []
     for flatfilename in bias_files:
-        stitch_deps = [next(
-            f for f, fname in zip(stitch_apps, stitch_files)
-            if fname == flatfilename
-        )]
 
         stitch_args = {
             "directory": directory,
             "filename": None,
             "files": None,
-            "color": "b",
+            "color": None,
             "datafilename": None,
             "arcfilename": None,
             "flatfilename": flatfilename
@@ -115,136 +118,48 @@ if __name__ == "__main__":
              np.unique(np.array(arc_filenames)[indexes]),
              np.unique(np.array(flat_filenames)[indexes]))
         )
-        print(relevant_files,flush=True)
+        # print(relevant_files,flush=True)
 
-        for file in relevant_files:
-            stitch_dep = next(
-                f for f, fname in zip(stitch_apps, stitch_files)
-                if fname == file
-            )
-            stitch_deps.append(stitch_dep)
+        # stitch_deps = []
+        # for file in relevant_files:
+        #     stitch_dep = [
+        #         f for f, fname in zip(stitch_apps, stitch_files)
+        #         if fname == file
+        #     ][0]
+        #     stitch_deps.append(stitch_dep)
+        # stitch_deps = list(dict.fromkeys(stitch_deps))
+        # print(stitch_deps, flush=True)
 
+        # stitch_deps = stitch_deps
+        # stitch_deps = [stitch_future_map[file] for file in relevant_files]
+        # print(stitch_deps)
 
-        stitch_deps = list(dict.fromkeys(stitch_deps))
-        print(stitch_deps, flush=True)
-
+        blue_args = dict(stitch_args)
+        blue_args["color"] = "b"
         bias_apps.append(ifum.combined_bias_app(
-            dep_futures = stitch_deps,
-            stitch_args = stitch_args,
+            # dep_futures = list(stitch_deps),
+            stitch_args = blue_args,
             files = relevant_files
         ))
 
-        stitch_args["color"] = "r"
+        red_args = dict(stitch_args)
+        red_args["color"] = "r"
         bias_apps.append(ifum.combined_bias_app(
-            dep_futures = stitch_deps,
-            stitch_args = stitch_args,
+            # dep_futures = list(stitch_deps),
+            stitch_args = red_args,
             files = relevant_files
         ))
 
-
-    # # 2.1-BIAS: solve for bias
-    # bias_files = np.unique(flat_filenames)
-    # bias_apps = []
-    # for flatfilename in bias_files:
-    #     stitch_dep = next(
-    #         f for f, fname in zip(stitch_apps, stitch_files)
-    #         if fname == flatfilename
-    #     )
-
-    #     stitch_args = {
-    #         "directory": directory,
-    #         "filename": None,
-    #         "files": None,
-    #         "color": "b",
-    #         "datafilename": None,
-    #         "arcfilename": None,
-    #         "flatfilename": flatfilename
-    #     }
-    #     internal_noise = ifum.bias_sub_app(
-    #         dep_futures = [stitch_dep],
-    #         stitch_args = stitch_args.copy()
-    #     )
-    #     bias_apps.append(internal_noise)
-
-    #     stitch_args["color"] = "r"
-    #     internal_noise = ifum.bias_sub_app(
-    #         dep_futures = [stitch_dep],
-    #         stitch_args = stitch_args.copy()
-    #     )
-    #     bias_apps.append(internal_noise)
     # print(f"{str(timedelta(seconds=int(time.time()-start)))} | internal bias started", flush=True)
-
-    # # 2.2-BIAS: write the bias values
-    # bias_files = np.unique(flat_filenames)
-    # bias_apps_s = []
-    # for f_idx,flatfilename in enumerate(bias_files):
-    #     stitch_dep_flat = next(
-    #         f for f, fname in zip(stitch_apps, stitch_files)
-    #         if fname == flatfilename
-    #     )
-
-    #     stitch_args = {
-    #         "directory": directory,
-    #         "filename": None,
-    #         "files": None,
-    #         "color": "b",
-    #         "datafilename": None,
-    #         "arcfilename": None,
-    #         "flatfilename": flatfilename
-    #     }
-
-    #     indexes = [i for i, value in enumerate(flat_filenames) if value == flatfilename]
-    #     relevant_files = np.concatenate(
-    #         (np.unique(np.array(data_filenames)[indexes]),
-    #          np.unique(np.array(arc_filenames)[indexes]),
-    #          np.unique(np.array(flat_filenames)[indexes]))
-    #     )
-
-    #     # internal_noise = ifum.bias_sub_app(
-    #     #     dep_futures = [],
-    #     #     stitch_args = stitch_args.copy()
-    #     # )
-    #     internal_noise = bias_apps[f_idx*2].result()
-    #     for file in relevant_files:
-    #         stitch_args["filename"] = file
-    #         # dep_futures = [f for f, fname in zip(stitch_apps, stitch_files) if fname == file]
-    #         stitch_dep = next(
-    #             f for f, fname in zip(stitch_apps, stitch_files)
-    #             if fname == file
-    #         )
-    #         bias_apps_s.append(ifum.noise_app(
-    #             dep_futures = [stitch_dep],
-    #             stitch_args = stitch_args.copy(),
-    #             internal_noise = internal_noise
-    #         ))
-
-    #     stitch_args["color"] = "r"
-        
-    #     # dep_futures = [f for f, fname in zip(stitch_apps, stitch_files) if fname == flatfilename]
-    #     # internal_noise = ifum.bias_sub_app(
-    #     #     dep_futures = [],
-    #     #     stitch_args = stitch_args.copy()
-    #     # )
-    #     internal_noise = bias_apps[f_idx*2+1].result()
-    #     for file in relevant_files:
-    #         stitch_args["filename"] = file
-    #         # dep_futures = [f for f, fname in zip(stitch_apps, stitch_files) if fname == file]
-    #         stitch_dep = next(
-    #             f for f, fname in zip(stitch_apps, stitch_files)
-    #             if fname == file
-    #         )
-    #         bias_apps_s.append(ifum.noise_app(
-    #             dep_futures = [stitch_dep],
-    #             stitch_args = stitch_args.copy(),
-    #             internal_noise = internal_noise
-    #         ))
-
-    print(f"{str(timedelta(seconds=int(time.time()-start)))} | internal bias started", flush=True)
     concurrent.futures.wait(bias_apps,return_when="ALL_COMPLETED")
-    for future in bias_apps:
-        future.result()
+    # print(bias_apps, flush=True)
+    # for future in bias_apps:
+    #     print(future,flush=True)
+    #     print(f"bias_app",flush=True)
+    #     future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | internal bias solved", flush=True)
 
+    sys.exit(1)
 
     # 3-CMRAY: create cosmic ray masks
     cmray_apps = []
@@ -271,14 +186,14 @@ if __name__ == "__main__":
         cmray_apps.append(ifum.cmray_mask_app(
             dep_futures = [],
             stitch_args = stitch_args,
-            data_filenames = data_filenames
+            data_files = data_filenames
         ))
 
         stitch_args["color"] = "r"
         cmray_apps.append(ifum.cmray_mask_app(
             dep_futures = [],
             stitch_args = stitch_args,
-            data_filenames = data_filenames
+            data_files = data_filenames
         ))
     # i do not need cmray masks done now! can start next step until rectify
     for future in cmray_apps:
