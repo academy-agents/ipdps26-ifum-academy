@@ -53,14 +53,17 @@ class Stitch():
 
         return internal_noise
 
-    def write_noise(self, internal_noise) -> None:
-        data_file = os.path.join(os.path.abspath("out"),self.filename+"_withbias_"+self.color+".fits")
-        
-        with fits.open(data_file) as datahdu:
-            data = datahdu[0].data
+    def write_noise(self, internal_noise, files) -> None:
+        for file in files:
+            # data_file = os.path.join(os.path.abspath("out"),self.filename+"_withbias_"+self.color+".fits")
+            data_file = os.path.join(os.path.abspath("out"),file+"_withbias_"+self.color+".fits")
 
-        denoised = data/internal_noise
-        fits.writeto(filename=os.path.join(os.path.abspath("out"),self.filename+self.color+".fits"), data=denoised, overwrite=True)
+            with fits.open(data_file) as datahdu:
+                data = datahdu[0].data
+
+            denoised = data/internal_noise
+            # fits.writeto(filename=os.path.join(os.path.abspath("out"),self.filename+self.color+".fits"), data=denoised, overwrite=True)
+            fits.writeto(filename=os.path.join(os.path.abspath("out"),file+self.color+".fits"), data=denoised, overwrite=True)
 
         return None
 
@@ -200,16 +203,48 @@ def load_and_save_app(stitch_args, bin_to_2x1=True):
     return stitch.load_and_save(bin_to_2x1)
 
 @python_app
-def bias_sub_app(stitch_args):
-    stitch = Stitch(**stitch_args)
-    return stitch.bias_sub()
+def combined_bias_app(dep_futures, stitch_args, files):
+    from astropy.io import fits
+    import os
+
+    stitch_args_ = dict(stitch_args)
+    files_ = list(files)
+
+    [f.result() for f in dep_futures]
+
+    stitch = Stitch(**stitch_args_)
+
+    internal_bias = stitch.bias_sub()
+    fits.writeto(filename=os.path.join(os.path.abspath("out"),stitch.flatfilename+"_biasfilter_"+stitch.color+".fits"), data=internal_bias, overwrite=True)
+
+    stitch.write_noise(internal_bias, files_)
+
+    return None
+
+# @python_app
+# def bias_sub_app(dep_futures,stitch_args):
+#     # import concurrent.futures
+#     # concurrent.futures.wait(dep_futures,return_when="ALL_COMPLETED")
+#     [f.result() for f in dep_futures]
+
+#     stitch = Stitch(**stitch_args)
+
+#     return stitch.bias_sub()
+
+# @python_app
+# def noise_app(dep_futures,stitch_args,internal_noise):
+#     [f.result() for f in dep_futures]
+
+#     # noise = internal_noise.result()
+#     noise = internal_noise
+
+#     stitch = Stitch(**stitch_args)
+
+#     return stitch.write_noise(noise)
 
 @python_app
-def noise_app(stitch_args,internal_noise):
-    stitch = Stitch(**stitch_args)
-    return stitch.write_noise(internal_noise)
+def cmray_mask_app(dep_futures, stitch_args, data_files) -> None:
+    [f.result() for f in dep_futures]
 
-@python_app
-def cmray_mask_app(stitch_args, data_files) -> None:
     stitch = Stitch(**stitch_args)
     return stitch.cmray_mask(data_files)

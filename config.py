@@ -8,6 +8,30 @@ from parsl.providers import SlurmProvider, LocalProvider
 from parsl.usage_tracking.levels import LEVEL_1
 from parsl.monitoring.monitoring import MonitoringHub
 
+import numpy as np
+
+def prepare_inputs(bad_blues,bad_reds,wcs_stars,mode,wavelength):
+    bad_masks = [np.array(bad_blues)-1,np.array(bad_reds)-1]
+    wcs_stars = np.array(wcs_stars)
+    if mode == "STD":
+        total_masks = 552
+        mask_groups = 12
+        hex_dims = (23,24)
+    elif mode == "HR":
+        total_masks = 864
+        mask_groups = 16
+        hex_dims = (27,32)
+    else:
+        print("invalid mode")
+
+    if wavelength == "far red":
+        bins = np.arange(7000,10000,1)
+    elif wavelength == "blue":
+        bins = np.arange(4000,6100,1)
+    else:
+        print("invalid wavelength")
+
+    return bad_masks,wcs_stars,total_masks,mask_groups,hex_dims,bins 
 
 
 def local_config():
@@ -28,40 +52,6 @@ def local_config():
     )
 
     return config
-
-
-
-# def midway_config():
-#     config = Config(
-#         executors=[
-#             HighThroughputExecutor(
-#                 label='Midway_HTEX_multinode',
-#                 address=address_by_interface('bond0'),
-#                 worker_debug=False,
-#                 max_workers_per_node=2,
-#                 provider=SlurmProvider(
-#                     'caslake',  # Partition name, e.g 'broadwl'
-#                     launcher=SrunLauncher(),
-#                     nodes_per_block=2,
-#                     init_blocks=1,
-#                     min_blocks=1,
-#                     max_blocks=1,
-#                     # string to prepend to #SBATCH blocks in the submit
-#                     # script to the scheduler eg: '#SBATCH --constraint=knl,quad,cache'
-#                     scheduler_options='',
-#                     # Command to be run before starting a worker, such as:
-#                     # 'module load Anaconda; source activate parsl_env'.
-#                     worker_init='conda activate parsl_py38',
-#                     walltime='00:30:00'
-#                 ),
-#             )
-#         ],
-#         usage_tracking=LEVEL_1,
-#     )
-
-#     return config
-
-
 
 def midway_config():
     config = Config(
