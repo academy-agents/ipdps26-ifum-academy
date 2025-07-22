@@ -12,61 +12,47 @@ import config
 
 if __name__ == "__main__":
     start = time.time()
+
     ######### INPUTS ########
 
     # directory containing unprocessed files
     directory = "/home/babnigg/globus/IFU-M/in/ut20240210/"
 
     # all files included in a single stack, repeat where necessary
-    # only include string in file that includes all files from single exposure
+    #  only include string in file that includes all files from single exposure
+    #  the files should be as close to chronological as possible
     data_filenames = ["0721","0722","0723","0727","0728","0729","0736","0737","0738"]
     arc_filenames = ["0725","0725","0725","0733","0733","0733","0740","0740","0740"]
     flat_filenames = ["0724","0724","0724","0734","0734","0734","0739","0739","0739"]
 
-    # mode LR,STD,HR
-    mode = "STD"
+    mode = "STD" # LR, STD, HR
+    wavelength = "far red" # far red, blue
 
-    # far red vs blue
-    wavelength = "far red"
-
-    # bad masks (on scale 1-x)
+    # bad masks for each fiber shoe (on scale 1-x)
     bad_blues = [23]
     bad_reds = []
 
+    bin_to_2x1 = True # guarentees optimal binning
+    sig_mult = 1.5 # maximum dispersion std from gaussian-based fit
+
     # stars to use in WCS (list RA,Dec)
-    # all stars should be present in at least some dithers
+    #  all stars should be present in at least some dithers
     wcs_stars = [[74.8322, -58.6579],
-                [74.8305, -58.6603],
-                [74.8308, -58.6587],
-                [74.8254, -58.6572],
-                [74.8237, -58.6594]]
-
-    # sometimes not already binned; this bin allows for proper gaussians to be fit
-    bin_to_2x1 = True
-
-    # value that is used to calculate maximum dispersion (from previous steps!)
-    sig_mult = 1.5
+                 [74.8305, -58.6603],
+                 [74.8308, -58.6587],
+                 [74.8254, -58.6572],
+                 [74.8237, -58.6594]]
 
     # preparing inputs as function inputs
-    bad_masks = [np.array(bad_blues)-1,np.array(bad_reds)-1]
-    wcs_stars = np.array(wcs_stars)
-    if mode == "STD":
-        total_masks = 552
-        mask_groups = 12
-        hex_dims = (23,24)
-    elif mode == "HR":
-        total_masks = 864
-        mask_groups = 16
-        hex_dims = (27,32)
-    else:
-        print("invalid mode")
-
-    if wavelength == "far red":
-        bins = np.arange(7000,10000,1)
-    elif wavelength == "blue":
-        bins = np.arange(4000,6100,1)
-    else:
-        print("invalid wavelength")
+    bad_masks,wcs_stars,total_masks,mask_groups,hex_dims,bins = (
+        config.prepare_inputs(
+            bad_blues,
+            bad_reds,
+            wcs_stars,
+            mode,
+            wavelength
+        )
+    )
 
 
 
@@ -77,8 +63,10 @@ if __name__ == "__main__":
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | parsl config loaded", flush=True)
 
 
+
     ######### WORKFLOW #########
-    # out directory where all files are stored
+
+    # create output directory if it doesn't exist already
     os.makedirs(os.path.abspath("out"), exist_ok=True)
 
 
@@ -96,15 +84,21 @@ if __name__ == "__main__":
             "flatfilename": None
         }
         stitch_apps.append(ifum.load_and_save_app(stitch_args,bin_to_2x1))
+    concurrent.futures.wait(stitch_apps)
     # for future in stitch_apps:
     #     future.result()
-    print(f"{str(timedelta(seconds=int(time.time()-start)))} | stitched files saving", flush=True)
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | stitched files saved", flush=True)
 
 
-    # 2-BIAS: solve for bias
-    #  double check that parallization is truly working; it should not wait for bias_sub_app to submit noise_app
+    # 2-BIAS: solve and save the bias
+    bias_files = np.unique(flat_filenames)
     bias_apps = []
-    for flatfilename in np.unique(flat_filenames):
+    for flatfilename in bias_files:
+        stitch_deps = [next(
+            f for f, fname in zip(stitch_apps, stitch_files)
+            if fname == flatfilename
+        )]
+
         stitch_args = {
             "directory": directory,
             "filename": None,
@@ -116,25 +110,137 @@ if __name__ == "__main__":
         }
 
         indexes = [i for i, value in enumerate(flat_filenames) if value == flatfilename]
-        relevant_files = np.concat(
+        relevant_files = np.concatenate(
             (np.unique(np.array(data_filenames)[indexes]),
              np.unique(np.array(arc_filenames)[indexes]),
              np.unique(np.array(flat_filenames)[indexes]))
         )
+        print(relevant_files,flush=True)
 
-        concurrent.futures.wait(np.array(stitch_apps)[np.isin(stitch_files,file)],return_when="ALL_COMPLETED")
-        internal_noise = ifum.bias_sub_app(stitch_args)
         for file in relevant_files:
-            stitch_args["filename"] = file
-            concurrent.futures.wait(np.array(stitch_apps)[np.isin(stitch_files,file)],return_when="ALL_COMPLETED")
-            bias_apps.append(ifum.noise_app(stitch_args,internal_noise.result()))
+            stitch_dep = next(
+                f for f, fname in zip(stitch_apps, stitch_files)
+                if fname == file
+            )
+            stitch_deps.append(stitch_dep)
+
+
+        stitch_deps = list(dict.fromkeys(stitch_deps))
+        print(stitch_deps, flush=True)
+
+        bias_apps.append(ifum.combined_bias_app(
+            dep_futures = stitch_deps,
+            stitch_args = stitch_args,
+            files = relevant_files
+        ))
 
         stitch_args["color"] = "r"
-        internal_noise = ifum.bias_sub_app(stitch_args)
-        for file in relevant_files:
-            stitch_args["filename"] = file
-            bias_apps.append(ifum.noise_app(stitch_args,internal_noise.result()))
+        bias_apps.append(ifum.combined_bias_app(
+            dep_futures = stitch_deps,
+            stitch_args = stitch_args,
+            files = relevant_files
+        ))
 
+
+    # # 2.1-BIAS: solve for bias
+    # bias_files = np.unique(flat_filenames)
+    # bias_apps = []
+    # for flatfilename in bias_files:
+    #     stitch_dep = next(
+    #         f for f, fname in zip(stitch_apps, stitch_files)
+    #         if fname == flatfilename
+    #     )
+
+    #     stitch_args = {
+    #         "directory": directory,
+    #         "filename": None,
+    #         "files": None,
+    #         "color": "b",
+    #         "datafilename": None,
+    #         "arcfilename": None,
+    #         "flatfilename": flatfilename
+    #     }
+    #     internal_noise = ifum.bias_sub_app(
+    #         dep_futures = [stitch_dep],
+    #         stitch_args = stitch_args.copy()
+    #     )
+    #     bias_apps.append(internal_noise)
+
+    #     stitch_args["color"] = "r"
+    #     internal_noise = ifum.bias_sub_app(
+    #         dep_futures = [stitch_dep],
+    #         stitch_args = stitch_args.copy()
+    #     )
+    #     bias_apps.append(internal_noise)
+    # print(f"{str(timedelta(seconds=int(time.time()-start)))} | internal bias started", flush=True)
+
+    # # 2.2-BIAS: write the bias values
+    # bias_files = np.unique(flat_filenames)
+    # bias_apps_s = []
+    # for f_idx,flatfilename in enumerate(bias_files):
+    #     stitch_dep_flat = next(
+    #         f for f, fname in zip(stitch_apps, stitch_files)
+    #         if fname == flatfilename
+    #     )
+
+    #     stitch_args = {
+    #         "directory": directory,
+    #         "filename": None,
+    #         "files": None,
+    #         "color": "b",
+    #         "datafilename": None,
+    #         "arcfilename": None,
+    #         "flatfilename": flatfilename
+    #     }
+
+    #     indexes = [i for i, value in enumerate(flat_filenames) if value == flatfilename]
+    #     relevant_files = np.concatenate(
+    #         (np.unique(np.array(data_filenames)[indexes]),
+    #          np.unique(np.array(arc_filenames)[indexes]),
+    #          np.unique(np.array(flat_filenames)[indexes]))
+    #     )
+
+    #     # internal_noise = ifum.bias_sub_app(
+    #     #     dep_futures = [],
+    #     #     stitch_args = stitch_args.copy()
+    #     # )
+    #     internal_noise = bias_apps[f_idx*2].result()
+    #     for file in relevant_files:
+    #         stitch_args["filename"] = file
+    #         # dep_futures = [f for f, fname in zip(stitch_apps, stitch_files) if fname == file]
+    #         stitch_dep = next(
+    #             f for f, fname in zip(stitch_apps, stitch_files)
+    #             if fname == file
+    #         )
+    #         bias_apps_s.append(ifum.noise_app(
+    #             dep_futures = [stitch_dep],
+    #             stitch_args = stitch_args.copy(),
+    #             internal_noise = internal_noise
+    #         ))
+
+    #     stitch_args["color"] = "r"
+        
+    #     # dep_futures = [f for f, fname in zip(stitch_apps, stitch_files) if fname == flatfilename]
+    #     # internal_noise = ifum.bias_sub_app(
+    #     #     dep_futures = [],
+    #     #     stitch_args = stitch_args.copy()
+    #     # )
+    #     internal_noise = bias_apps[f_idx*2+1].result()
+    #     for file in relevant_files:
+    #         stitch_args["filename"] = file
+    #         # dep_futures = [f for f, fname in zip(stitch_apps, stitch_files) if fname == file]
+    #         stitch_dep = next(
+    #             f for f, fname in zip(stitch_apps, stitch_files)
+    #             if fname == file
+    #         )
+    #         bias_apps_s.append(ifum.noise_app(
+    #             dep_futures = [stitch_dep],
+    #             stitch_args = stitch_args.copy(),
+    #             internal_noise = internal_noise
+    #         ))
+
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | internal bias started", flush=True)
+    concurrent.futures.wait(bias_apps,return_when="ALL_COMPLETED")
     for future in bias_apps:
         future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | internal bias solved", flush=True)
@@ -143,6 +249,16 @@ if __name__ == "__main__":
     # 3-CMRAY: create cosmic ray masks
     cmray_apps = []
     for datafilename in data_filenames:
+
+        # bias_deps = []
+        # for flatfilename in np.unique(flat_filenames):
+        #     indexes = [i for i, (df, ff) in enumerate(zip(data_filenames, flat_filenames))
+        #                if df == datafilename and ff == flatfilename]
+        #     if indexes:
+        #         flat_idx = list(np.unique(flat_filenames)).index(flatfilename)
+        #         bias_deps.append(bias_apps[flat_idx*2])
+        #         bias_deps.append(bias_apps[flat_idx*2+1])
+
         stitch_args = {
             "directory": directory,
             "filename": None,
@@ -152,12 +268,21 @@ if __name__ == "__main__":
             "arcfilename": None,
             "flatfilename": None
         }
-        cmray_apps.append(ifum.cmray_mask_app(stitch_args,data_filenames))
+        cmray_apps.append(ifum.cmray_mask_app(
+            dep_futures = [],
+            stitch_args = stitch_args,
+            data_filenames = data_filenames
+        ))
+
         stitch_args["color"] = "r"
-        cmray_apps.append(ifum.cmray_mask_app(stitch_args,data_filenames))
+        cmray_apps.append(ifum.cmray_mask_app(
+            dep_futures = [],
+            stitch_args = stitch_args,
+            data_filenames = data_filenames
+        ))
     # i do not need cmray masks done now! can start next step until rectify
-    # for future in cmray_apps:
-    #     future.result()
+    for future in cmray_apps:
+        future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | cosmic ray masks processing", flush=True)
 
 
@@ -167,8 +292,12 @@ if __name__ == "__main__":
 
     # 4-FLATMASK: using flat field, first guess then complex guess
     # need to still parallelize better on this part!
-    flat_masks = []
+    flat_apps = []
     for flatfilename in np.unique(flat_filenames):
+
+        bias_deps = [f for f in bias_apps 
+                     if any(fn == flatfilename for fn in flat_filenames)]
+
         mask_args = {
             "color": "b",
             "flatfilename": flatfilename,
@@ -176,16 +305,16 @@ if __name__ == "__main__":
             "total_masks": total_masks,
             "mask_groups": mask_groups
         }
-        flat_masks.append(ifum.flat_mask_app(mask_args))
+        flat_apps.append(ifum.flat_mask_app(
+            dep_futures = bias_deps,
+            mask_args = mask_args
+        ))
         mask_args["color"] = "r"
-        flat_masks.append(ifum.flat_mask_app(mask_args))
+        flat_apps.append(ifum.flat_mask_app(
+            dep_futures = bias_deps,
+            mask_args = mask_args
+        ))
         print(f"4submitted: {flatfilename}", flush=True)
-    for future in flat_masks:
-        # try:
-        future.result()
-        # except Exception as e:
-        #     print(f"4-FLATMASK error: {e}", flush=True)
-        #     sys.exit(1)
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | flat field based traces optimized", flush=True)
 
     # 5-FLATTRACE: use flat field solution, along with specified parameters, to create masks

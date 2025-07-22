@@ -862,8 +862,10 @@ def mask_poly(mask_polys, n, flatdir, total_masks, mask_groups, bad_mask, datadi
 
 
 @python_app
-def flat_mask_app(mask_args,polydeg=3,sampling=40):
+def flat_mask_app(dep_futures,mask_args,polydeg=3,sampling=40):
     mask = Mask(**mask_args)
+    [f.result() for f in dep_futures]
+
     mask_polys0 = mask.first_guess(polydeg)    
     mask_poly(mask_polys0,
               sampling,
@@ -877,27 +879,31 @@ def flat_mask_app(mask_args,polydeg=3,sampling=40):
     return None
 
 @python_app
-def create_flatmask_app(mask_args,center_deg,sigma_deg,sig_mult):
+def create_flatmask_app(dep_futures,mask_args,center_deg,sigma_deg,sig_mult):
     mask = Mask(**mask_args)
+    [f.result() for f in dep_futures]
     mask.get_flat_traces(center_deg,sigma_deg)
     mask.create_mask(sig_mult)
     return None
 
 @python_app
-def optimize_arc_app(mask_args,arcfilename,sig_mult,expected_peaks,optimize=True):
+def optimize_arc_app(dep_futures,mask_args,arcfilename,sig_mult,expected_peaks,optimize=True):
     mask = Mask(**mask_args)
+    [f.result() for f in dep_futures]
     return mask.optimize_trace(arcfilename,sig_mult,False,expected_peaks=expected_peaks,optimize=optimize)
 
 @python_app
-def optimize_data_app(mask_args,arcfilename,datafilename,sig_mult,expected_peaks,optimize):
+def optimize_data_app(dep_futures,mask_args,arcfilename,datafilename,sig_mult,expected_peaks,optimize):
     mask = Mask(**mask_args)
+    [f.result() for f in dep_futures]
     mask.optimize_trace(datafilename,sig_mult,True,expected_peaks=expected_peaks,optimize=optimize)
     mask.get_rots(arcfilename,datafilename,optimize=optimize)
     return None
 
 @python_app
-def create_mask_app(mask_args,filename,arcfilename,sig_mult,copy=False):
+def create_mask_app(dep_futures,mask_args,filename,arcfilename,sig_mult,copy=False):
     mask = Mask(**mask_args)
+    [f.result() for f in dep_futures]
     if copy:
         mask.create_mask(sig_mult,filename,copy=arcfilename)
     else:
