@@ -66,11 +66,17 @@ def midway_config():
                     min_blocks=1,
                     max_blocks=1,
                     parallelism=1,
+                    nodes_per_block=4, # match requested nodes
                     launcher=SrunLauncher(),
                     worker_init='source $(conda info --base)/etc/profile.d/conda.sh; conda activate /home/babnigg/conda_envs/ifum_parsl'
                     ),
             )
         ],
+        monitoring=MonitoringHub(
+            hub_address=address_by_hostname(),
+            monitoring_debug=False,
+            resource_monitoring_interval=10,
+        ),
         usage_tracking=LEVEL_1,
     )
 

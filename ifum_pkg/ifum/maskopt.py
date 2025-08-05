@@ -811,7 +811,11 @@ def multi_gauss_fit(x,mask_polys,masks_split,flat_data,bad_mask):
         print("bad fit",flush=True)
         return None
     
-def mask_poly(mask_polys, n, flatdir, total_masks, mask_groups, bad_mask, datadir) -> None:        
+def mask_poly(mask_polys, n, flatdir, total_masks, mask_groups, bad_mask, datadir) -> None:
+    import numpy as np
+    import scipy
+    from astropy.io import fits
+
     with fits.open(flatdir) as flatf:
         flat_data = flatf[0].data
     flat_data = scipy.ndimage.median_filter(flat_data,size=(1,3))
@@ -836,14 +840,16 @@ def mask_poly(mask_polys, n, flatdir, total_masks, mask_groups, bad_mask, datadi
             multi_gauss_fit(x,mask_polys,masks_split,flat_data,bad_mask)
         )
 
-    print("submitted")
+    print("submitted", flush=True)
     
     bad_lines = []
     for i,future in enumerate(multi_fits):
+        print(i,future, flush=True)
         if future.result() is None:
             bad_lines.append(x_s[i])
         else:
             centers,sigmas,amps = future.result()
+            print(i,"complete", flush=True)
             gauss_centers_full = np.vstack((gauss_centers_full,np.array(centers).flatten()))
             gauss_sigmas_full = np.vstack((gauss_sigmas_full,np.array(sigmas).flatten()))
             gauss_amps_full = np.vstack((gauss_amps_full,np.array(amps).flatten()))
@@ -861,7 +867,7 @@ def mask_poly(mask_polys, n, flatdir, total_masks, mask_groups, bad_mask, datadi
 
 
 
-@python_app
+# @python_app
 def flat_mask_app(dep_futures,mask_args,polydeg=3,sampling=40):
     mask = Mask(**mask_args)
     [f.result() for f in dep_futures]
