@@ -289,60 +289,190 @@ if __name__ == "__main__":
     # blue_cmray_result.result()
     # red_cmray_result.result()
 
-    print(f"{str(timedelta(seconds=int(time.time()-start)))} | cosmic ray masks completed", flush=True)
+    # print(f"{str(timedelta(seconds=int(time.time()-start)))} | cosmic ray masks completed", flush=True)
 
 
 
     # concurrent futures wait python docs / as_completed
 
 
+
+
+
+
     # 4+5 COMBINED
-    flat_apps = []
-    center_deg = 5
-    sigma_deg = 3
-    sig_mult = 1.5
+    # flat_apps = []
+    # center_deg = 5
+    # sigma_deg = 3
+    # sig_mult = 1.5
+    # for flatfilename in np.unique(flat_filenames):
+    #     mask_args = {
+    #         "color": "b",
+    #         "flatfilename": flatfilename,
+    #         "bad_masks": bad_masks,
+    #         "total_masks": total_masks,
+    #         "mask_groups": mask_groups
+    #     }
+
+
+    #     # mask_context = ifum.flat_mask_app(
+    #     #     dep_futures=[],  # Pass any prerequisite futures
+    #     #     mask_args=mask_args,
+    #     # )
+
+    #     # # --- GATHER RESULTS ON THE MAIN PROCESS ---
+    #     # print("Main script: Waiting for all fit results...", flush=True)
+
+    #     # all_futures = mask_context["all_futures"]
+    #     # lines = mask_context["lines"]
+    #     # masks_split = mask_context["masks_split"]
+    #     # bad_mask = mask_context["bad_mask"]
+    #     # total_masks = mask_context["total_masks"]
+
+    #     # gauss_centers_full = np.empty((0, total_masks // 2))
+    #     # gauss_sigmas_full = np.empty((0, total_masks // 2))
+    #     # gauss_amps_full = np.empty((0, total_masks // 2))
+    #     # bad_lines = []
+
+    #     # # Iterate through each x and its corresponding list of futures
+    #     # for x in lines:
+    #     #     fit_futures_for_x = all_futures[x]
+            
+    #     #     centers_for_x = []
+    #     #     sigmas_for_x = []
+    #     #     amps_for_x = []
+    #     #     is_bad_line = False
+
+    #     #     # Process results for each mask_group for this x
+    #     #     for i, future in enumerate(fit_futures_for_x):
+    #     #         popt = future.result() # This blocks, but only for one result at a time.
+                
+    #     #         if popt is None:
+    #     #             is_bad_line = True
+    #     #             break # If one mask group fails for an x, the whole line is bad.
+
+    #     #         mask_group = masks_split[i]
+    #     #         center = np.array(popt[3:][1::3])
+    #     #         sigma = np.array(popt[3:][2::3])
+    #     #         amp = np.array(popt[3:][0::3])
+
+    #     #         # Re-insert NaNs for bad masks within the group
+    #     #         if np.intersect1d(bad_mask, mask_group).size > 0:
+    #     #             _, _, ind2 = np.intersect1d(bad_mask, mask_group, return_indices=True)
+    #     #             for mask_ in ind2:
+    #     #                 center = np.insert(center, mask_, np.nan, axis=0)
+    #     #                 sigma = np.insert(sigma, mask_, np.nan, axis=0)
+    #     #                 amp = np.insert(amp, mask_, np.nan, axis=0)
+                
+    #     #         centers_for_x.append(center)
+    #     #         sigmas_for_x.append(sigma)
+    #     #         amps_for_x.append(amp)
+
+    #     #     if is_bad_line:
+    #     #         bad_lines.append(x)
+    #     #     else:
+    #     #         # If the line was successful, stack the results
+    #     #         gauss_centers_full = np.vstack((gauss_centers_full, np.concatenate(centers_for_x)))
+    #     #         gauss_sigmas_full = np.vstack((gauss_sigmas_full, np.concatenate(sigmas_for_x)))
+    #     #         gauss_amps_full = np.vstack((gauss_amps_full, np.concatenate(amps_for_x)))
+
+    #     # # --- SAVE FINAL RESULTS ---
+    #     # print("Main script: All fits complete. Saving results.", flush=True)
+    #     # save_dict = {
+    #     #     'x': np.array(lines)[~np.isin(lines, bad_lines)],
+    #     #     'centers': gauss_centers_full,
+    #     #     'sigmas': gauss_sigmas_full,
+    #     #     'amps': gauss_amps_full
+    #     # }
+    #     # np.savez(mask_context["datadir"], **save_dict)
+    #     # print(f"Results saved to {mask_context['datadir']}", flush=True)
+
+
+
+
+
+    #     flat_apps.append(ifum.flat_mask_app(
+    #         dep_futures = [],
+    #         mask_args = mask_args
+    #     ))
+
+    #     print(flat_apps[-1], flush=True)
+    #     flat_apps.append(ifum.create_flatmask_app(
+    #         dep_futures = flat_apps[-1],
+    #         mask_args = mask_args,
+    #         center_deg = center_deg,
+    #         sigma_deg = sigma_deg,
+    #         sig_mult = sig_mult
+    #     ))
+
+    #     mask_args["color"] = "r"
+    #     flat_apps.append(ifum.flat_mask_app(
+    #         dep_futures = [],
+    #         mask_args = mask_args
+    #     ))
+    #     flat_apps.append(ifum.create_flatmask_app(
+    #         dep_futures = flat_apps[-1],
+    #         mask_args = mask_args,
+    #         center_deg = center_deg,
+    #         sigma_deg = sigma_deg,
+    #         sig_mult = sig_mult
+    #     ))
+
+    #     print(f"4+5 submitted: {flatfilename}", flush=True)
+
+    # for future in flat_apps:
+    #     future.result()
+    # print(f"{str(timedelta(seconds=int(time.time()-start)))} | ASDASDflat field based traces optimized", flush=True)
+
+    # # 4-FLATMASK: using flat field, first guess then complex guess
+    # # need to still parallelize better on this part!
+
+
+
+    base_mask_args = {
+        "color": None,
+        "flatfilename": None,
+        "bad_masks": bad_masks,
+        "total_masks": total_masks,
+        "mask_groups": mask_groups
+    }
+
+    first_guess_futures = {"b": {}, "r": {}}
+    mask_args_s = {"b": {}, "r": {}}
     for flatfilename in np.unique(flat_filenames):
-        mask_args = {
-            "color": "b",
-            "flatfilename": flatfilename,
-            "bad_masks": bad_masks,
-            "total_masks": total_masks,
-            "mask_groups": mask_groups
-        }
-        flat_apps.append(ifum.flat_mask_app(
+        blue_args = base_mask_args.copy()
+        blue_args["flatfilename"] = flatfilename
+        blue_args["color"] = "b"
+        first_guess = ifum.first_guess_app(
             dep_futures = [],
-            mask_args = mask_args
-        ))
-        print(flat_apps[-1], flush=True)
-        flat_apps.append(ifum.create_flatmask_app(
-            dep_futures = flat_apps[-1],
-            mask_args = mask_args,
-            center_deg = center_deg,
-            sigma_deg = sigma_deg,
-            sig_mult = sig_mult
-        ))
+            mask_args = blue_args
+        )
+        first_guess_futures["b"][flatfilename] = first_guess
+        mask_args_s["b"][flatfilename] = blue_args
 
-        mask_args["color"] = "r"
-        flat_apps.append(ifum.flat_mask_app(
+        red_args = base_mask_args.copy()
+        red_args["flatfilename"] = flatfilename
+        red_args["color"] = "r"
+        first_guess = ifum.first_guess_app(
             dep_futures = [],
-            mask_args = mask_args
-        ))
-        flat_apps.append(ifum.create_flatmask_app(
-            dep_futures = flat_apps[-1],
-            mask_args = mask_args,
-            center_deg = center_deg,
-            sigma_deg = sigma_deg,
-            sig_mult = sig_mult
-        ))
+            mask_args = red_args
+        )
+        first_guess_futures["r"][flatfilename] = first_guess
+        mask_args_s["r"][flatfilename] = red_args
 
-        print(f"4+5 submitted: {flatfilename}", flush=True)
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | first guess flat field based traces started", flush=True)
 
-    for future in flat_apps:
-        future.result()
-    print(f"{str(timedelta(seconds=int(time.time()-start)))} | ASDASDflat field based traces optimized", flush=True)
+    ifum.flat_mask_wrapper(
+        first_guesses = first_guess_futures,
+        mask_args_s = mask_args_s
+    )
 
-    # 4-FLATMASK: using flat field, first guess then complex guess
-    # need to still parallelize better on this part!
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | first guess flat field based traces completed", flush=True)
+
+    sys.exit(1)
+
+
+
     flat_apps = []
     for flatfilename in np.unique(flat_filenames):
 

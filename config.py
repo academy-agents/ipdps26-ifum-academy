@@ -9,6 +9,7 @@ from parsl.usage_tracking.levels import LEVEL_1
 from parsl.monitoring.monitoring import MonitoringHub
 
 import numpy as np
+import os
 
 def prepare_inputs(bad_blues,bad_reds,wcs_stars,mode,wavelength):
     bad_masks = [np.array(bad_blues)-1,np.array(bad_reds)-1]
@@ -54,19 +55,20 @@ def local_config():
     return config
 
 def midway_config():
+    run_dir = "/home/babnigg/globus/IFU-M/runinfo"
     config = Config(
-        run_dir="/home/babnigg/globus/IFU-M/runinfo",
+        run_dir=run_dir,
         executors=[
             HighThroughputExecutor(
                 label='Midway_HTEX_multinode',
                 address=address_by_hostname(),
                 worker_debug=False,
-                # max_workers_per_node=2,
+                max_workers_per_node=16,
                 provider=LocalProvider(
                     min_blocks=1,
                     max_blocks=1,
                     parallelism=1,
-                    nodes_per_block=4, # match requested nodes
+                    nodes_per_block=1, # match requested nodes
                     launcher=SrunLauncher(),
                     worker_init='source $(conda info --base)/etc/profile.d/conda.sh; conda activate /home/babnigg/conda_envs/ifum_parsl'
                     ),
@@ -76,6 +78,7 @@ def midway_config():
             hub_address=address_by_hostname(),
             monitoring_debug=False,
             resource_monitoring_interval=10,
+            logging_endpoint=f"sqlite:///{os.path.join(run_dir, 'monitoring.db')}"
         ),
         usage_tracking=LEVEL_1,
     )
