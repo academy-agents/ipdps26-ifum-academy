@@ -62,7 +62,7 @@ def midway_config():
             HighThroughputExecutor(
                 label='Midway_HTEX_multinode',
                 address=address_by_hostname(),
-                worker_debug=False,
+                worker_debug=True,
                 max_workers_per_node=16,
                 provider=LocalProvider(
                     min_blocks=1,
@@ -76,7 +76,8 @@ def midway_config():
         ],
         monitoring=MonitoringHub(
             hub_address=address_by_hostname(),
-            monitoring_debug=False,
+            monitoring_debug=True,
+            workflow_name="IFU-M",
             resource_monitoring_interval=10,
             logging_endpoint=f"sqlite:///{os.path.join(run_dir, 'monitoring.db')}"
         ),

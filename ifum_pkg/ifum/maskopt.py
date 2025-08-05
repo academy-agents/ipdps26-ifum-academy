@@ -973,9 +973,9 @@ def flat_mask_wrapper(first_guesses, mask_args_s, polydeg=3, sampling=5):
             for i, fit_futs in enumerate(fit_futures):
                 print(f"{flat_filename}{color}: vertical slice {i}", flush=True)
 
-                all_centers = []
-                all_sigmas = []
-                all_amps = []
+                all_centers = np.full(mask.total_masks//2, np.nan)
+                all_sigmas = np.full(mask.total_masks//2, np.nan)
+                all_amps = np.full(mask.total_masks//2, np.nan)
 
                 for j,future in enumerate(fit_futs):
                     print(f"{flat_filename}{color}: {i} - mask group {j}", flush=True)
@@ -995,18 +995,39 @@ def flat_mask_wrapper(first_guesses, mask_args_s, polydeg=3, sampling=5):
                         sigma = np.array(popt[3:][2::3])
                         amp = np.array(popt[3:][0::3])
 
-                        if np.intersect1d(mask.bad_mask, masks_split[i]).size > 0:
-                            _, _, ind2 = np.intersect1d(mask.bad_mask, masks_split[i], return_indices=True)
-                            for mask_ in ind2:
-                                center = np.insert(center, mask_, np.nan, axis=0)
-                                sigma = np.insert(sigma, mask_, np.nan, axis=0)
-                                amp = np.insert(amp, mask_, np.nan, axis=0)
+                        print(center.shape, sigma.shape, amp.shape, flush=True)
 
-                        all_centers = np.concatenate((all_centers, center))
-                        all_sigmas = np.concatenate((all_sigmas, sigma))
-                        all_amps = np.concatenate((all_amps, amp))
 
-                    print(np.array(all_centers).shape, flush=True)
+                        # Get the mask indices for this group
+                        mask_indices = masks_split[j]
+                        
+                        # Skip bad masks within this group
+                        valid_indices = [idx for idx in range(len(mask_indices)) 
+                                        if mask_indices[idx] not in mask.bad_mask]
+                        
+                        # Place the results in the correct positions in the output arrays
+                        for k, valid_idx in enumerate(valid_indices):
+                            mask_idx = mask_indices[valid_idx]
+                            all_centers[mask_idx] = center[k]
+                            all_sigmas[mask_idx] = sigma[k]
+                            all_amps[mask_idx] = amp[k]
+
+                        # if np.intersect1d(mask.bad_mask, masks_split[i]).size > 0:
+                        #     _, _, ind2 = np.intersect1d(mask.bad_mask, masks_split[i], return_indices=True)
+                        #     for mask_ in ind2:
+                        #         center = np.insert(center, mask_, np.nan, axis=0)
+                        #         sigma = np.insert(sigma, mask_, np.nan, axis=0)
+                        #         amp = np.insert(amp, mask_, np.nan, axis=0)
+
+                        # print(center.shape, sigma.shape, amp.shape, flush=True)
+
+
+
+                        # all_centers = np.concatenate((all_centers, center))
+                        # all_sigmas = np.concatenate((all_sigmas, sigma))
+                        # all_amps = np.concatenate((all_amps, amp))
+
+                    print(np.array(all_centers), flush=True)
                 print(np.array(all_centers).shape, flush=True)
 
                 gauss_centers_full = np.vstack((gauss_centers_full,np.array(all_centers).flatten()))
