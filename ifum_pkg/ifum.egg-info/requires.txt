@@ -8,3 +8,4 @@ parsl
 astropy
 scipy
 scikit-image
+academy-py

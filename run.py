@@ -159,51 +159,187 @@ if __name__ == "__main__":
     #     future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | internal bias solved", flush=True)
 
-    sys.exit(1)
 
-    # 3-CMRAY: create cosmic ray masks
-    cmray_apps = []
-    for datafilename in data_filenames:
+    # # 3-CMRAY: create cosmic ray masks
+    # cmray_apps = []
+    # for datafilename in data_filenames:
 
-        # bias_deps = []
-        # for flatfilename in np.unique(flat_filenames):
-        #     indexes = [i for i, (df, ff) in enumerate(zip(data_filenames, flat_filenames))
-        #                if df == datafilename and ff == flatfilename]
-        #     if indexes:
-        #         flat_idx = list(np.unique(flat_filenames)).index(flatfilename)
-        #         bias_deps.append(bias_apps[flat_idx*2])
-        #         bias_deps.append(bias_apps[flat_idx*2+1])
+    #     # bias_deps = []
+    #     # for flatfilename in np.unique(flat_filenames):
+    #     #     indexes = [i for i, (df, ff) in enumerate(zip(data_filenames, flat_filenames))
+    #     #                if df == datafilename and ff == flatfilename]
+    #     #     if indexes:
+    #     #         flat_idx = list(np.unique(flat_filenames)).index(flatfilename)
+    #     #         bias_deps.append(bias_apps[flat_idx*2])
+    #     #         bias_deps.append(bias_apps[flat_idx*2+1])
 
-        stitch_args = {
-            "directory": directory,
-            "filename": None,
-            "files": None,
-            "color": "b",
-            "datafilename": datafilename,
-            "arcfilename": None,
-            "flatfilename": None
-        }
-        cmray_apps.append(ifum.cmray_mask_app(
-            dep_futures = [],
-            stitch_args = stitch_args,
-            data_files = data_filenames
-        ))
+    #     stitch_args = {
+    #         "directory": directory,
+    #         "filename": None,
+    #         "files": None,
+    #         "color": "b",
+    #         "datafilename": datafilename,
+    #         "arcfilename": None,
+    #         "flatfilename": None
+    #     }
+    #     cmray_apps.append(ifum.cmray_mask_app(
+    #         dep_futures = [],
+    #         stitch_args = stitch_args,
+    #         data_files = data_filenames
+    #     ))
 
-        stitch_args["color"] = "r"
-        cmray_apps.append(ifum.cmray_mask_app(
-            dep_futures = [],
-            stitch_args = stitch_args,
-            data_files = data_filenames
-        ))
-    # i do not need cmray masks done now! can start next step until rectify
-    for future in cmray_apps:
-        future.result()
-    print(f"{str(timedelta(seconds=int(time.time()-start)))} | cosmic ray masks processing", flush=True)
+    #     stitch_args["color"] = "r"
+    #     cmray_apps.append(ifum.cmray_mask_app(
+    #         dep_futures = [],
+    #         stitch_args = stitch_args,
+    #         data_files = data_filenames
+    #     ))
+    # # i do not need cmray masks done now! can start next step until rectify
+    # for future in cmray_apps:
+    #     future.result()
+    # print(f"{str(timedelta(seconds=int(time.time()-start)))} | cosmic ray masks processing", flush=True)
 
 
-    sys.exit(1)
+
+    # cmray_apps = []
+    # for datafilename in data_filenames:
+    #     stitch_args = {
+    #         "directory": directory,
+    #         "filename": None,
+    #         "files": None,
+    #         "color": "b",
+    #         "datafilename": datafilename,
+    #         "arcfilename": None,
+    #         "flatfilename": None
+    #     }
+    #     cmray_apps.append(ifum.cmray_mask_new_app(
+    #         stitch_args = stitch_args,
+    #         data_files = data_filenames
+    #     ))
+
+    #     stitch_args["color"] = "r"
+    #     cmray_apps.append(ifum.cmray_mask_new_app(
+    #         stitch_args = stitch_args,
+    #         data_files = data_filenames
+    #     ))
+
+    # cmray_apps = []
+    # for datafilename in data_filenames:
+    #     stitch_args = {
+    #         "directory": directory,
+    #         "filename": None,
+    #         "files": None,
+    #         "color": "b",
+    #         "datafilename": datafilename,
+    #         "arcfilename": None,
+    #         "flatfilename": None
+    #     }
+    #     cmray_apps.append(ifum.cmray_mask_minimize_app(
+    #         stitch_args = stitch_args,
+    #         data_files = data_filenames
+    #     ))
+
+    #     stitch_args["color"] = "r"
+    #     cmray_apps.append(ifum.cmray_mask_minimize_app(
+    #         stitch_args = stitch_args,
+    #         data_files = data_filenames
+    #     ))
+
+
+
+    # 3-CMRAY: academy agent
+    # print(f"{str(timedelta(seconds=int(time.time()-start)))} | Setting up cosmic ray agent", flush=True)
+
+    blue_stitch_args = {
+        "directory": directory,
+        "filename": None,
+        "files": None,
+        "color": "b",
+        "datafilename": None,
+        "arcfilename": None,
+        "flatfilename": None
+    }
+
+    red_stitch_args = {
+        "directory": directory,
+        "filename": None,
+        "files": None,
+        "color": "r",
+        "datafilename": None,
+        "arcfilename": None,
+        "flatfilename": None
+    }
+
+    blue_cmray_result = ifum.cmray_mask_agent_join_app(
+        dep_futures=[],
+        stitch_args=blue_stitch_args,
+        data_files=data_filenames,
+        area=300,
+    )
+
+    red_cmray_result = ifum.cmray_mask_agent_join_app(
+        dep_futures=[],
+        stitch_args=red_stitch_args,
+        data_files=data_filenames,
+        area=300,
+    )
+
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | cosmic ray agent processing started", flush=True)
+
+    # blue_cmray_result.result()
+    # red_cmray_result.result()
+
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | cosmic ray masks completed", flush=True)
+
+
 
     # concurrent futures wait python docs / as_completed
+
+
+    # 4+5 COMBINED
+    flat_apps = []
+    center_deg = 5
+    sigma_deg = 3
+    sig_mult = 1.5
+    for flatfilename in np.unique(flat_filenames):
+        mask_args = {
+            "color": "b",
+            "flatfilename": flatfilename,
+            "bad_masks": bad_masks,
+            "total_masks": total_masks,
+            "mask_groups": mask_groups
+        }
+        flat_apps.append(ifum.flat_mask_app(
+            dep_futures = [],
+            mask_args = mask_args
+        ))
+        print(flat_apps[-1], flush=True)
+        flat_apps.append(ifum.create_flatmask_app(
+            dep_futures = flat_apps[-1],
+            mask_args = mask_args,
+            center_deg = center_deg,
+            sigma_deg = sigma_deg,
+            sig_mult = sig_mult
+        ))
+
+        mask_args["color"] = "r"
+        flat_apps.append(ifum.flat_mask_app(
+            dep_futures = [],
+            mask_args = mask_args
+        ))
+        flat_apps.append(ifum.create_flatmask_app(
+            dep_futures = flat_apps[-1],
+            mask_args = mask_args,
+            center_deg = center_deg,
+            sigma_deg = sigma_deg,
+            sig_mult = sig_mult
+        ))
+
+        print(f"4+5 submitted: {flatfilename}", flush=True)
+
+    for future in flat_apps:
+        future.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | ASDASDflat field based traces optimized", flush=True)
 
     # 4-FLATMASK: using flat field, first guess then complex guess
     # need to still parallelize better on this part!
@@ -221,12 +357,12 @@ if __name__ == "__main__":
             "mask_groups": mask_groups
         }
         flat_apps.append(ifum.flat_mask_app(
-            dep_futures = bias_deps,
+            dep_futures = [],
             mask_args = mask_args
         ))
         mask_args["color"] = "r"
         flat_apps.append(ifum.flat_mask_app(
-            dep_futures = bias_deps,
+            dep_futures = [],
             mask_args = mask_args
         ))
         print(f"4submitted: {flatfilename}", flush=True)
@@ -245,9 +381,20 @@ if __name__ == "__main__":
             "total_masks": total_masks,
             "mask_groups": mask_groups
         }
-        flat_traces.append(ifum.create_flatmask_app(mask_args,center_deg,sigma_deg,flat_traces))
+        flat_traces.append(ifum.create_flatmask_app(
+            mask_args,
+            center_deg,
+            sigma_deg,
+            flat_traces
+        ))
+
         mask_args["color"] = "r"
-        flat_traces.append(ifum.create_flatmask_app(mask_args,center_deg,sigma_deg,flat_traces))
+        flat_traces.append(ifum.create_flatmask_app(
+            mask_args,
+            center_deg,
+            sigma_deg,
+            flat_traces
+        ))
         print(f"5submitted: {flatfilename}", flush=True)
     for future in flat_traces:
         # try:

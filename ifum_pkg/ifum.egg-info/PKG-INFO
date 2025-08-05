@@ -15,5 +15,6 @@ Requires-Dist: parsl
 Requires-Dist: astropy
 Requires-Dist: scipy
 Requires-Dist: scikit-image
+Requires-Dist: academy-py
 
 ...
