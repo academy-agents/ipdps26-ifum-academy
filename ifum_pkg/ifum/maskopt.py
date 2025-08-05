@@ -734,13 +734,26 @@ class Mask():
 
 
 
-
-# import possibly in other file?
 @python_app
-def multi_gauss_fit(x,mask_polys,masks_split,flat_data,bad_mask):
-    import numpy as np
+def minimize_gauss_fit(xs, ys, p0, lbounds, hbounds):
     import scipy
 
+    try:
+        popt,_ = scipy.optimize.curve_fit(
+            gauss_added,
+            xs,
+            ys,
+            p0=p0,
+            bounds=(lbounds,hbounds),
+            nan_policy="omit",
+            method="trf",
+            maxfev=1000
+        )
+        return popt
+    except:
+        return None
+
+def multi_gauss_fit(x,mask_polys,masks_split,flat_data,bad_mask):
     cutoffs = [5]
     for i in np.arange(1,len(masks_split)):
         first = mask_polys[masks_split[i-1]][~np.isnan(mask_polys[masks_split[i-1]]).any(axis=1)][-1]
@@ -752,64 +765,59 @@ def multi_gauss_fit(x,mask_polys,masks_split,flat_data,bad_mask):
     # double check that 0::6 to be sure that it is working for non-STD formats
     continuum,_ = scipy.optimize.curve_fit(f_2,cutoffs[0::6],flat_data[cutoffs[0::6],x])
 
-    try:
-        centers = []
-        sigmas = []
-        amps = []
-        for i,mask_group in enumerate(masks_split):
-            p0 = []
-            lbounds = []
-            hbounds = []
-            
-            # append quadratic shift guess
-            p0.append(continuum[0])
-            l,h = generate_bounds(continuum[0],.3)
-            lbounds.append(l)
-            hbounds.append(h)
-            p0.append(continuum[1])
-            l,h = generate_bounds(continuum[1],.3)
-            lbounds.append(l)
-            hbounds.append(h)
-            p0.append(continuum[2])
-            lbounds.append(-np.inf)
-            hbounds.append(np.inf)
+    # print(continuum,flush=True)
 
-            for mask in mask_group:
-                if mask not in bad_mask:
-                    # append amplitude guess
-                    p0.append(abs(flat_data[int(np.round(np.poly1d(mask_polys[mask])(x))),x]-f_2(int(np.round(np.poly1d(mask_polys[mask])(x))),*continuum)))
-                    lbounds.append(0)
-                    hbounds.append(np.max(flat_data[cutoffs[i]:cutoffs[i+1],x])*2)
-                    # append center guess
-                    p0.append(np.poly1d(mask_polys[mask])(x))
-                    lbounds.append(np.poly1d(mask_polys[mask])(x)-2) # +/- 2 pixels from first guess
-                    hbounds.append(np.poly1d(mask_polys[mask])(x)+2)
-                    # append sigma guess
-                    p0.append(3.)
-                    lbounds.append(1.5)
-                    hbounds.append(5.5)
-            
-            popt,_ = scipy.optimize.curve_fit(gauss_added,np.arange(cutoffs[i],cutoffs[i+1]),flat_data[cutoffs[i]:cutoffs[i+1],x],p0=p0,bounds=(lbounds,hbounds),nan_policy="omit",method="trf")
+    fit_futures = []
+    for i, mask_group in enumerate(masks_split):
+        p0 = []
+        lbounds = []
+        hbounds = []
+        
+        # append quadratic shift guess
+        p0.append(continuum[0])
+        l,h = generate_bounds(continuum[0],.3)
+        lbounds.append(l)
+        hbounds.append(h)
+        p0.append(continuum[1])
+        l,h = generate_bounds(continuum[1],.3)
+        lbounds.append(l)
+        hbounds.append(h)
+        p0.append(continuum[2])
+        lbounds.append(-np.inf)
+        hbounds.append(np.inf)
 
-            center = np.array(popt[3:][1::3])
-            sigma = np.array(popt[3:][2::3])
-            amp = np.array(popt[3:][0::3])
+        for mask in mask_group:
+            if mask not in bad_mask:
+                # print(f"mask {mask} for x {x}", flush=True)
+                # print(*continuum, flush=True)
+                # print(np.poly1d(mask_polys[mask])(x), flush=True)
 
-            if np.intersect1d(bad_mask,mask_group).size > 0:
-                _, _, ind2 = np.intersect1d(bad_mask,mask_group,return_indices=True)
-                for mask_ in ind2:
-                    center = np.insert(center, mask_, np.nan, axis=0)
-                    sigma = np.insert(sigma, mask_, np.nan, axis=0)
-                    amp = np.insert(amp, mask_, np.nan, axis=0)
+                # append amplitude guess
+                p0.append(abs(flat_data[int(np.round(np.poly1d(mask_polys[mask])(x))),x]-f_2(int(np.round(np.poly1d(mask_polys[mask])(x))),*continuum)))
+                lbounds.append(0)
+                hbounds.append(np.max(flat_data[cutoffs[i]:cutoffs[i+1],x])*2)
+                # append center guess
+                p0.append(np.poly1d(mask_polys[mask])(x))
+                lbounds.append(np.poly1d(mask_polys[mask])(x)-2) # +/- 2 pixels from first guess
+                hbounds.append(np.poly1d(mask_polys[mask])(x)+2)
+                # append sigma guess
+                p0.append(3.)
+                lbounds.append(1.5)
+                hbounds.append(5.5)
 
-            centers.append(center)
-            sigmas.append(sigma)
-            amps.append(amp)
+        # print(f"{x} optimization started: mask group {i}", flush=True)
 
-        return np.array(centers).flatten(),np.array(sigmas).flatten(),np.array(amps).flatten()
-    except:
-        print("bad fit",flush=True)
-        return None
+        xs = np.arange(cutoffs[i],cutoffs[i+1])
+        ys = flat_data[cutoffs[i]:cutoffs[i+1],x]
+
+        fit_futures.append(
+            minimize_gauss_fit(xs, ys, p0, lbounds, hbounds)
+        )
+
+    # print(f"{x}: all fits submitted", flush=True)
+    # print(fit_futures)
+
+    return fit_futures
     
 def mask_poly(mask_polys, n, flatdir, total_masks, mask_groups, bad_mask, datadir) -> None:
     import numpy as np
@@ -837,18 +845,21 @@ def mask_poly(mask_polys, n, flatdir, total_masks, mask_groups, bad_mask, datadi
     multi_fits = []
     for x in x_s:
         multi_fits.append(
-            multi_gauss_fit(x,mask_polys,masks_split,flat_data,bad_mask)
+            multi_gauss_fit(x,mask_polys,masks_split,flatdir,bad_mask)
         )
+        # print(f"fit {x} submitted", flush=True)
 
-    print("submitted", flush=True)
+    # print("all fits submitted", flush=True)
     
     bad_lines = []
     for i,future in enumerate(multi_fits):
-        print(i,future, flush=True)
+        # print(i,future, flush=True)
         if future.result() is None:
+        # if future is None:
             bad_lines.append(x_s[i])
         else:
             centers,sigmas,amps = future.result()
+            # centers,sigmas,amps = future
             print(i,"complete", flush=True)
             gauss_centers_full = np.vstack((gauss_centers_full,np.array(centers).flatten()))
             gauss_sigmas_full = np.vstack((gauss_sigmas_full,np.array(sigmas).flatten()))
@@ -863,16 +874,12 @@ def mask_poly(mask_polys, n, flatdir, total_masks, mask_groups, bad_mask, datadi
 
     return None
 
-
-
-
-
 # @python_app
-def flat_mask_app(dep_futures,mask_args,polydeg=3,sampling=40):
+def flat_mask_app(dep_futures,mask_args,polydeg=3,sampling=5):
     mask = Mask(**mask_args)
     [f.result() for f in dep_futures]
 
-    mask_polys0 = mask.first_guess(polydeg)    
+    mask_polys0 = mask.first_guess(polydeg)
     mask_poly(mask_polys0,
               sampling,
               mask.flatdir,
@@ -883,6 +890,339 @@ def flat_mask_app(dep_futures,mask_args,polydeg=3,sampling=40):
 
     # mask.mask_poly(mask_polys0,sampling)
     return None
+
+
+
+
+
+# NEW APPROACH
+# want to run all multi-gauss fits in parallel at once
+# submit for different files, for different x values, for different mask groups
+
+# PARALLELIZE FIRST GUESS
+@python_app
+def first_guess_app(dep_futures, mask_args, polydeg=3):
+    mask = Mask(**mask_args)
+    [f.result() for f in dep_futures]
+
+    return mask.first_guess(polydeg)
+
+def flat_mask_wrapper(first_guesses, mask_args_s, polydeg=3, sampling=5):
+    colors = ["b", "r"]
+    all_fit_futures = {"b": {}, "r": {}}
+
+    # given both mask_args and first_guesses are double dictionaries
+    # where keys are colors and each subkey is a flat filename
+    # we will iterate through colors and then through each flat file
+    # and submit multi-gauss fits for each x value in the flat file
+
+    for color in colors:
+        first_guesses_c = first_guesses[color]
+        mask_args_s_c = mask_args_s[color]
+
+        for mask_args in mask_args_s_c.values():
+            # print(f"IN FUNCTION: {mask_args}", flush=True)
+            mask = Mask(**mask_args)
+            all_fit_futures[color][mask.flatfilename] = []
+
+            first_guess = first_guesses_c[mask.flatfilename].result()
+
+            # init mask, get sampled lines
+            with fits.open(mask.flatdir) as flatf:
+                flat_data = flatf[0].data
+            flat_data = scipy.ndimage.median_filter(flat_data, size=(1, 3))
+            weight = np.log10(np.median(flat_data, axis=0))
+            weight = np.array(weight - np.min(weight))[::3]
+            lines = np.random.choice(
+                np.arange(0, flat_data.shape[1], 3),
+                size=sampling,
+                replace=False,
+                p=weight/np.sum(weight)
+            )
+
+            masks_split = np.array(np.split(np.arange(mask.total_masks//2), mask.mask_groups))
+
+            x_s = lines
+            for x in x_s:
+                # print(mask.bad_mask, flush=True)
+                fit_futures = multi_gauss_fit(
+                    x, first_guess, masks_split, flat_data, mask.bad_mask
+                )
+                all_fit_futures[color][mask.flatfilename].append(fit_futures)
+                # print(f"fit {x} submitted", flush=True)
+
+            # print("all fits submitted", flush=True)
+
+            # show length of fit futures for each color and flat file
+            print(f"{mask.flatfilename}{color}: {len(all_fit_futures[color][mask.flatfilename])} x {len(all_fit_futures[color][mask.flatfilename][0])}", flush=True)
+
+    print("both colors & all files submitted", flush=True)
+
+    for color in colors:
+        for flat_filename, fit_futures in all_fit_futures[color].items():
+            mask = Mask(**mask_args_s[color][flat_filename])
+            # print(mask_args_s[color][flat_filename], flush=True)
+            print(f"{flat_filename}{color}: {fit_futures}")
+            # print(fit_futures==all_fit_futures[color][flat_filename])
+
+            # for each mask group, retrieve results from futures
+            gauss_centers_full = np.empty((0,mask.total_masks//2))
+            gauss_sigmas_full = np.empty((0,mask.total_masks//2))
+            gauss_amps_full = np.empty((0,mask.total_masks//2))
+
+            for i, fit_futs in enumerate(fit_futures):
+                print(f"{flat_filename}{color}: vertical slice {i}", flush=True)
+
+                all_centers = []
+                all_sigmas = []
+                all_amps = []
+
+                for j,future in enumerate(fit_futs):
+                    print(f"{flat_filename}{color}: {i} - mask group {j}", flush=True)
+                    popt = future.result()
+                    # print(popt, flush=True)
+
+                    if popt is None:
+                        print(f"{flat_filename}{color}: bad fit at slice {i}", flush=True)
+                        all_centers.append(np.full(mask.total_masks//2, np.nan))
+                        all_sigmas.append(np.full(mask.total_masks//2, np.nan))
+                        all_amps.append(np.full(mask.total_masks//2, np.nan))
+                        # go to next fit_futs
+                        continue
+
+                    else:
+                        center = np.array(popt[3:][1::3])
+                        sigma = np.array(popt[3:][2::3])
+                        amp = np.array(popt[3:][0::3])
+
+                        if np.intersect1d(mask.bad_mask, masks_split[i]).size > 0:
+                            _, _, ind2 = np.intersect1d(mask.bad_mask, masks_split[i], return_indices=True)
+                            for mask_ in ind2:
+                                center = np.insert(center, mask_, np.nan, axis=0)
+                                sigma = np.insert(sigma, mask_, np.nan, axis=0)
+                                amp = np.insert(amp, mask_, np.nan, axis=0)
+
+                        all_centers = np.concatenate((all_centers, center))
+                        all_sigmas = np.concatenate((all_sigmas, sigma))
+                        all_amps = np.concatenate((all_amps, amp))
+
+                    print(np.array(all_centers).shape, flush=True)
+                print(np.array(all_centers).shape, flush=True)
+
+                gauss_centers_full = np.vstack((gauss_centers_full,np.array(all_centers).flatten()))
+                gauss_sigmas_full = np.vstack((gauss_sigmas_full,np.array(all_sigmas).flatten()))
+                gauss_amps_full = np.vstack((gauss_amps_full,np.array(all_amps).flatten()))
+
+                print(gauss_centers_full.shape, flush=True)
+            print(gauss_centers_full.shape, flush=True)
+
+            # save_dict = {'x': x_s[np.isin(x_s, mask.bad_lines, invert=True)],
+            #             'centers': gauss_centers_full,
+            #             'sigmas': gauss_sigmas_full,
+            #             'amps': gauss_amps_full}
+
+            # np.savez(mask.datadir, **save_dict)
+
+            # # retrieve results from futures
+            # bad_lines = []
+            # for future in fit_futures:
+            #     if future.result() is None:
+            #         bad_lines.append(x_s[i])
+            #     else:
+            #         centers, sigmas, amps = future.result()
+            #         all_centers.append(centers)
+            #         all_sigmas.append(sigmas)
+            #         all_amps.append(amps)
+
+#         centers = []
+#         sigmas = []
+#         amps = []
+#         for i, mask_group in enumerate(masks_split):
+#             popt = fit_futures[i].result()
+            
+#             # print(f"{x} optimization finished: mask group {i}", flush=True)
+#             # print(f"{x}: popt: {popt}", flush=True)
+
+#             if popt is None:
+#                 # print(f"{x}: bad fit for mask group {i}", flush=True)
+#                 return None
+
+#             center = np.array(popt[3:][1::3])
+#             sigma = np.array(popt[3:][2::3])
+#             amp = np.array(popt[3:][0::3])
+
+#             if np.intersect1d(bad_mask,mask_group).size > 0:
+#                 _, _, ind2 = np.intersect1d(bad_mask,mask_group,return_indices=True)
+#                 for mask_ in ind2:
+#                     center = np.insert(center, mask_, np.nan, axis=0)
+#                     sigma = np.insert(sigma, mask_, np.nan, axis=0)
+#                     amp = np.insert(amp, mask_, np.nan, axis=0)
+
+#             centers.append(center)
+#             sigmas.append(sigma)
+#             amps.append(amp)
+
+#         return np.array(centers).flatten(),np.array(sigmas).flatten(),np.array(amps).flatten()
+
+
+
+
+
+
+
+
+
+# with fits.open(flatdir) as flatf:
+#         flat_data = flatf[0].data
+#     flat_data = scipy.ndimage.median_filter(flat_data,size=(1,3))
+
+#     weight = np.log10(np.median(flat_data,axis=0))
+#     weight = np.array(weight - np.min(weight))[::3]
+#     lines = np.random.choice(np.arange(0,flat_data.shape[1],3),
+#                                 size=n, 
+#                                 replace=False, 
+#                                 p=weight/np.sum(weight))
+
+#     gauss_centers_full = np.empty((0,total_masks//2))
+#     gauss_sigmas_full = np.empty((0,total_masks//2))
+#     gauss_amps_full = np.empty((0,total_masks//2))
+    
+#     masks_split = np.array(np.split(np.arange(total_masks//2),mask_groups))
+
+#     x_s = lines
+#     multi_fits = []
+#     for x in x_s:
+#         multi_fits.append(
+#             multi_gauss_fit(x,mask_polys,masks_split,flatdir,bad_mask)
+#         )
+#         print(f"fit {x} submitted", flush=True)
+
+#     print("all fits submitted", flush=True)
+    
+#     bad_lines = []
+#     for i,future in enumerate(multi_fits):
+#         # print(i,future, flush=True)
+#         if future.result() is None:
+#         # if future is None:
+#             bad_lines.append(x_s[i])
+#         else:
+#             centers,sigmas,amps = future.result()
+#             # centers,sigmas,amps = future
+#             print(i,"complete", flush=True)
+#             gauss_centers_full = np.vstack((gauss_centers_full,np.array(centers).flatten()))
+#             gauss_sigmas_full = np.vstack((gauss_sigmas_full,np.array(sigmas).flatten()))
+#             gauss_amps_full = np.vstack((gauss_amps_full,np.array(amps).flatten()))
+
+#     save_dict = {'x': x_s[np.isin(x_s, bad_lines, invert=True)],
+#                  'centers': gauss_centers_full,
+#                  'sigmas': gauss_sigmas_full,
+#                  'amps': gauss_amps_full}
+
+#     np.savez(datadir, **save_dict)
+
+#     return None
+
+            
+            
+            # flat_mask_app(first_guess, mask_args, polydeg, sampling)
+
+
+
+
+@python_app
+def flat_mask_app(first_guess, mask_args, polydeg=3, sampling=5):
+    mask = Mask(**mask_args)
+
+    mask_polys0 = first_guess.result()
+    mask_poly(mask_polys0,
+              sampling,
+              mask.flatdir,
+              mask.total_masks,
+              mask.mask_groups,
+              mask.bad_mask,
+              mask.datadir)
+
+    return None
+
+
+# def flat_mask_app(dep_futures, mask_args, polydeg=3, sampling=5):
+#     """
+#     Orchestrates the mask fitting process by submitting a fine-grained task
+#     for every (x, mask_group) pair.
+#     """
+#     # 1. Initial setup
+#     mask = Mask(**mask_args)
+#     [f.result() for f in dep_futures]
+#     mask_polys0 = mask.first_guess(polydeg)
+
+#     # 2. Prepare data common to all fits to avoid repeated I/O
+#     print("Preparing data for parallel fits...", flush=True)
+#     with fits.open(mask.flatdir) as flatf:
+#         flat_data = flatf[0].data
+#     flat_data = scipy.ndimage.median_filter(flat_data, size=(1, 3))
+
+#     weight = np.log10(np.median(flat_data, axis=0))
+#     weight = np.array(weight - np.min(weight))[::3]
+#     lines = np.random.choice(np.arange(0, flat_data.shape[1], 3),
+#                              size=sampling,
+#                              replace=False,
+#                              p=weight / np.sum(weight))
+    
+#     masks_split = np.array(np.split(np.arange(mask.total_masks // 2), mask.mask_groups), dtype=object)
+
+#     # 3. SCATTER: Loop through all x and mask_groups to submit all tasks
+#     all_futures = {} # Use a dictionary to store futures, keyed by x
+#     for x in lines:
+#         # Pre-calculate cutoffs and continuum for this x value
+#         cutoffs = [5]
+#         for i in np.arange(1, len(masks_split)):
+#             first = mask_polys0[masks_split[i-1]][~np.isnan(mask_polys0[masks_split[i-1]]).any(axis=1)][-1]
+#             last = mask_polys0[masks_split[i]][~np.isnan(mask_polys0[masks_split[i]]).any(axis=1)][0]
+#             cutoffs.append(int((np.poly1d(first)(x) + np.poly1d(last)(x)) / 2))
+#         cutoffs.append(flat_data.shape[0] - 5)
+#         cutoffs = np.array(cutoffs)
+#         continuum, _ = scipy.optimize.curve_fit(f_2, cutoffs[0::6], flat_data[cutoffs[0::6], x])
+
+#         fit_futures_for_x = []
+#         for i, mask_group in enumerate(masks_split):
+#             # Prepare parameters for this specific (x, mask_group) pair
+#             p0, lbounds, hbounds = [], [], []
+#             p0.extend(continuum)
+#             l, h = generate_bounds(continuum[0], .3); lbounds.append(l); hbounds.append(h)
+#             l, h = generate_bounds(continuum[1], .3); lbounds.append(l); hbounds.append(h)
+#             lbounds.append(-np.inf); hbounds.append(np.inf)
+
+#             for mask_idx in mask_group:
+#                 if mask_idx not in mask.bad_mask:
+#                     p0.append(abs(flat_data[int(np.round(np.poly1d(mask_polys0[mask_idx])(x))), x] - f_2(int(np.round(np.poly1d(mask_polys0[mask_idx])(x))), *continuum)))
+#                     lbounds.append(0)
+#                     hbounds.append(np.max(flat_data[cutoffs[i]:cutoffs[i+1], x]) * 2)
+#                     p0.append(np.poly1d(mask_polys0[mask_idx])(x))
+#                     lbounds.append(np.poly1d(mask_polys0[mask_idx])(x) - 2)
+#                     hbounds.append(np.poly1d(mask_polys0[mask_idx])(x) + 2)
+#                     p0.append(3.); lbounds.append(1.5); hbounds.append(5.5)
+            
+#             xs = np.arange(cutoffs[i], cutoffs[i+1])
+#             ys = flat_data[cutoffs[i]:cutoffs[i+1], x]
+
+#             # Submit the fine-grained task
+#             future = minimize_gauss_fit(xs, ys, p0, lbounds, hbounds)
+#             fit_futures_for_x.append(future)
+        
+#         all_futures[x] = fit_futures_for_x
+#         print(f"Submitted {len(fit_futures_for_x)} mask group fits for x={x}", flush=True)
+
+#     # 4. Return all futures and context to the main script for processing
+#     return {
+#         "all_futures": all_futures,
+#         "lines": lines,
+#         "masks_split": masks_split,
+#         "bad_mask": mask.bad_mask,
+#         "datadir": mask.datadir,
+#         "total_masks": mask.total_masks
+#     }
+
+
 
 @python_app
 def create_flatmask_app(dep_futures,mask_args,center_deg,sigma_deg,sig_mult):
