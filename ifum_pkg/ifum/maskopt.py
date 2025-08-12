@@ -907,9 +907,10 @@ def first_guess_app(dep_futures, mask_args, polydeg=3):
 
     return mask.first_guess(polydeg)
 
-def flat_mask_wrapper(first_guesses, mask_args_s, polydeg=3, sampling=5):
+def flat_mask_wrapper(first_guesses, mask_args_s, polydeg=3, sampling=40):
     colors = ["b", "r"]
     all_fit_futures = {"b": {}, "r": {}}
+    original_lines = {"b": {}, "r": {}}
 
     # given both mask_args and first_guesses are double dictionaries
     # where keys are colors and each subkey is a flat filename
@@ -939,6 +940,7 @@ def flat_mask_wrapper(first_guesses, mask_args_s, polydeg=3, sampling=5):
                 replace=False,
                 p=weight/np.sum(weight)
             )
+            original_lines[color][mask.flatfilename] = lines
 
             masks_split = np.array(np.split(np.arange(mask.total_masks//2), mask.mask_groups))
 
@@ -954,15 +956,15 @@ def flat_mask_wrapper(first_guesses, mask_args_s, polydeg=3, sampling=5):
             # print("all fits submitted", flush=True)
 
             # show length of fit futures for each color and flat file
-            print(f"{mask.flatfilename}{color}: {len(all_fit_futures[color][mask.flatfilename])} x {len(all_fit_futures[color][mask.flatfilename][0])}", flush=True)
+            # print(f"{mask.flatfilename}{color}: {len(all_fit_futures[color][mask.flatfilename])} x {len(all_fit_futures[color][mask.flatfilename][0])}", flush=True)
 
-    print("both colors & all files submitted", flush=True)
+    # print("both colors & all files submitted", flush=True)
 
     for color in colors:
         for flat_filename, fit_futures in all_fit_futures[color].items():
             mask = Mask(**mask_args_s[color][flat_filename])
             # print(mask_args_s[color][flat_filename], flush=True)
-            print(f"{flat_filename}{color}: {fit_futures}")
+            # print(f"{flat_filename}{color}: {fit_futures}")
             # print(fit_futures==all_fit_futures[color][flat_filename])
 
             # for each mask group, retrieve results from futures
@@ -971,19 +973,19 @@ def flat_mask_wrapper(first_guesses, mask_args_s, polydeg=3, sampling=5):
             gauss_amps_full = np.empty((0,mask.total_masks//2))
 
             for i, fit_futs in enumerate(fit_futures):
-                print(f"{flat_filename}{color}: vertical slice {i}", flush=True)
+                # print(f"{flat_filename}{color}: vertical slice {i}", flush=True)
 
                 all_centers = np.full(mask.total_masks//2, np.nan)
                 all_sigmas = np.full(mask.total_masks//2, np.nan)
                 all_amps = np.full(mask.total_masks//2, np.nan)
 
                 for j,future in enumerate(fit_futs):
-                    print(f"{flat_filename}{color}: {i} - mask group {j}", flush=True)
+                    # print(f"{flat_filename}{color}: {i} - mask group {j}", flush=True)
                     popt = future.result()
                     # print(popt, flush=True)
 
                     if popt is None:
-                        print(f"{flat_filename}{color}: bad fit at slice {i}", flush=True)
+                        # print(f"{flat_filename}{color}: bad fit at slice {i}", flush=True)
                         all_centers.append(np.full(mask.total_masks//2, np.nan))
                         all_sigmas.append(np.full(mask.total_masks//2, np.nan))
                         all_amps.append(np.full(mask.total_masks//2, np.nan))
@@ -995,7 +997,7 @@ def flat_mask_wrapper(first_guesses, mask_args_s, polydeg=3, sampling=5):
                         sigma = np.array(popt[3:][2::3])
                         amp = np.array(popt[3:][0::3])
 
-                        print(center.shape, sigma.shape, amp.shape, flush=True)
+                        # print(center.shape, sigma.shape, amp.shape, flush=True)
 
 
                         # Get the mask indices for this group
@@ -1027,22 +1029,24 @@ def flat_mask_wrapper(first_guesses, mask_args_s, polydeg=3, sampling=5):
                         # all_sigmas = np.concatenate((all_sigmas, sigma))
                         # all_amps = np.concatenate((all_amps, amp))
 
-                    print(np.array(all_centers), flush=True)
-                print(np.array(all_centers).shape, flush=True)
+                    # print(np.array(all_centers), flush=True)
+                # print(np.array(all_centers).shape, flush=True)
 
                 gauss_centers_full = np.vstack((gauss_centers_full,np.array(all_centers).flatten()))
                 gauss_sigmas_full = np.vstack((gauss_sigmas_full,np.array(all_sigmas).flatten()))
                 gauss_amps_full = np.vstack((gauss_amps_full,np.array(all_amps).flatten()))
 
-                print(gauss_centers_full.shape, flush=True)
-            print(gauss_centers_full.shape, flush=True)
+                # print(gauss_centers_full.shape, flush=True)
+            # print(gauss_centers_full.shape, flush=True)
 
-            # save_dict = {'x': x_s[np.isin(x_s, mask.bad_lines, invert=True)],
-            #             'centers': gauss_centers_full,
-            #             'sigmas': gauss_sigmas_full,
-            #             'amps': gauss_amps_full}
+            x_s = original_lines[color][flat_filename]
+            # print(x_s.shape,gauss_centers_full.shape, gauss_sigmas_full.shape, gauss_amps_full.shape, flush=True)
+            save_dict = {'x': x_s,#[np.isin(x_s, mask.bad_lines, invert=True)],
+                        'centers': gauss_centers_full,
+                        'sigmas': gauss_sigmas_full,
+                        'amps': gauss_amps_full}
 
-            # np.savez(mask.datadir, **save_dict)
+            np.savez(mask.datadir, **save_dict)
 
             # # retrieve results from futures
             # bad_lines = []
@@ -1248,7 +1252,7 @@ def flat_mask_app(first_guess, mask_args, polydeg=3, sampling=5):
 @python_app
 def create_flatmask_app(dep_futures,mask_args,center_deg,sigma_deg,sig_mult):
     mask = Mask(**mask_args)
-    [f.result() for f in dep_futures]
+    # [f.result() for f in dep_futures]
     mask.get_flat_traces(center_deg,sigma_deg)
     mask.create_mask(sig_mult)
     return None

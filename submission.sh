@@ -5,8 +5,8 @@
 #SBATCH --account=pi-chard
 #SBATCH --partition=caslake
 #SBATCH --time=03:00:00
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=21
+#SBATCH --nodes=8
+#SBATCH --ntasks-per-node=14
 #SBATCH --output=./jobs/ifum_job_%j.out
 #SBATCH --error=./jobs/ifum_job_%j.err
 

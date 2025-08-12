@@ -63,12 +63,12 @@ def midway_config():
                 label='Midway_HTEX_multinode',
                 address=address_by_hostname(),
                 worker_debug=True,
-                max_workers_per_node=16,
+                max_workers_per_node=100,
                 provider=LocalProvider(
                     min_blocks=1,
-                    max_blocks=1,
+                    # max_blocks=4,
                     parallelism=1,
-                    nodes_per_block=1, # match requested nodes
+                    nodes_per_block=8, # match requested nodes
                     launcher=SrunLauncher(),
                     worker_init='source $(conda info --base)/etc/profile.d/conda.sh; conda activate /home/babnigg/conda_envs/ifum_parsl'
                     ),

@@ -462,41 +462,41 @@ if __name__ == "__main__":
 
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | first guess flat field based traces started", flush=True)
 
-    ifum.flat_mask_wrapper(
-        first_guesses = first_guess_futures,
-        mask_args_s = mask_args_s
-    )
+    # ifum.flat_mask_wrapper(
+    #     first_guesses = first_guess_futures,
+    #     mask_args_s = mask_args_s
+    # )
 
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | first guess flat field based traces completed", flush=True)
 
-    sys.exit(1)
+    # sys.exit(1)
 
 
 
-    flat_apps = []
-    for flatfilename in np.unique(flat_filenames):
+    # flat_apps = []
+    # for flatfilename in np.unique(flat_filenames):
 
-        bias_deps = [f for f in bias_apps 
-                     if any(fn == flatfilename for fn in flat_filenames)]
+    #     bias_deps = [f for f in bias_apps 
+    #                  if any(fn == flatfilename for fn in flat_filenames)]
 
-        mask_args = {
-            "color": "b",
-            "flatfilename": flatfilename,
-            "bad_masks": bad_masks,
-            "total_masks": total_masks,
-            "mask_groups": mask_groups
-        }
-        flat_apps.append(ifum.flat_mask_app(
-            dep_futures = [],
-            mask_args = mask_args
-        ))
-        mask_args["color"] = "r"
-        flat_apps.append(ifum.flat_mask_app(
-            dep_futures = [],
-            mask_args = mask_args
-        ))
-        print(f"4submitted: {flatfilename}", flush=True)
-    print(f"{str(timedelta(seconds=int(time.time()-start)))} | flat field based traces optimized", flush=True)
+    #     mask_args = {
+    #         "color": "b",
+    #         "flatfilename": flatfilename,
+    #         "bad_masks": bad_masks,
+    #         "total_masks": total_masks,
+    #         "mask_groups": mask_groups
+    #     }
+    #     flat_apps.append(ifum.flat_mask_app(
+    #         dep_futures = [],
+    #         mask_args = mask_args
+    #     ))
+    #     mask_args["color"] = "r"
+    #     flat_apps.append(ifum.flat_mask_app(
+    #         dep_futures = [],
+    #         mask_args = mask_args
+    #     ))
+    #     print(f"4submitted: {flatfilename}", flush=True)
+    # print(f"{str(timedelta(seconds=int(time.time()-start)))} | flat field based traces optimized", flush=True)
 
     # 5-FLATTRACE: use flat field solution, along with specified parameters, to create masks
     center_deg = 5
@@ -512,20 +512,22 @@ if __name__ == "__main__":
             "mask_groups": mask_groups
         }
         flat_traces.append(ifum.create_flatmask_app(
-            mask_args,
-            center_deg,
-            sigma_deg,
-            flat_traces
+            dep_futures=[],
+            mask_args=mask_args,
+            center_deg=center_deg,
+            sigma_deg=sigma_deg,
+            sig_mult=sig_mult
         ))
 
         mask_args["color"] = "r"
         flat_traces.append(ifum.create_flatmask_app(
-            mask_args,
-            center_deg,
-            sigma_deg,
-            flat_traces
+            dep_futures=[],
+            mask_args=mask_args,
+            center_deg=center_deg,
+            sigma_deg=sigma_deg,
+            sig_mult=sig_mult
         ))
-        print(f"5submitted: {flatfilename}", flush=True)
+        # print(f"5submitted: {flatfilename}", flush=True)
     for future in flat_traces:
         # try:
         future.result()
@@ -546,9 +548,9 @@ if __name__ == "__main__":
             "total_masks": total_masks,
             "mask_groups": mask_groups
         }
-        arc_opts.append(ifum.optimize_arc_app(mask_args,arcfilename,sig_mult,expected_peaks,optimize))
-        mask_args["color"] = "r"        
-        arc_opts.append(ifum.optimize_arc_app(mask_args,arcfilename,sig_mult,expected_peaks,optimize))
+        arc_opts.append(ifum.optimize_arc_app([],mask_args,arcfilename,sig_mult,expected_peaks,optimize))
+        mask_args["color"] = "r"
+        arc_opts.append(ifum.optimize_arc_app([],mask_args,arcfilename,sig_mult,expected_peaks,optimize))
     for future in arc_opts:
         future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | traces optimized for arc data", flush=True)    
@@ -565,9 +567,9 @@ if __name__ == "__main__":
             "total_masks": total_masks,
             "mask_groups": mask_groups
         }
-        data_opts.append(ifum.optimize_data_app(mask_args,arcfilename,datafilename,sig_mult,expected_peaks,optimize))
-        mask_args["color"] = "b"
-        data_opts.append(ifum.optimize_data_app(mask_args,arcfilename,datafilename,sig_mult,expected_peaks,optimize))
+        data_opts.append(ifum.optimize_data_app([],mask_args,arcfilename,datafilename,sig_mult,expected_peaks,optimize))
+        mask_args["color"] = "r"
+        data_opts.append(ifum.optimize_data_app([],mask_args,arcfilename,datafilename,sig_mult,expected_peaks,optimize))
     for future in data_opts:
         future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | traces optimized for science data", flush=True)    
@@ -582,9 +584,9 @@ if __name__ == "__main__":
             "total_masks": total_masks,
             "mask_groups": mask_groups
         }
-        arc_traces.append(ifum.create_mask_app(mask_args,arcfilename,arcfilename,sig_mult))
+        arc_traces.append(ifum.create_mask_app([],mask_args,arcfilename,arcfilename,sig_mult))
         mask_args["color"] = "r"
-        arc_traces.append(ifum.create_mask_app(mask_args,arcfilename,arcfilename,sig_mult))
+        arc_traces.append(ifum.create_mask_app([],mask_args,arcfilename,arcfilename,sig_mult))
     for future in arc_traces:
         future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | arc optimized trace masks saved", flush=True)    
@@ -600,9 +602,9 @@ if __name__ == "__main__":
             "total_masks": total_masks,
             "mask_groups": mask_groups
         }
-        data_traces.append(ifum.create_mask_app(mask_args,datafilename,arcfilename,sig_mult,copy))
+        data_traces.append(ifum.create_mask_app([],mask_args,datafilename,arcfilename,sig_mult,copy))
         mask_args["color"] = "r"
-        data_traces.append(ifum.create_mask_app(mask_args,datafilename,arcfilename,sig_mult,copy))
+        data_traces.append(ifum.create_mask_app([],mask_args,datafilename,arcfilename,sig_mult,copy))
     for future in data_traces:
         future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | data optimized trace masks saved", flush=True)    
