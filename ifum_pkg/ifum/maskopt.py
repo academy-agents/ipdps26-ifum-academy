@@ -492,7 +492,8 @@ class Mask():
                      'traces': center_traces}
 
         np.savez(os.path.join(os.path.abspath("out"),filename+self.color+"_trace_fits.npz"), **save_dict)
-        
+
+        print(f"file saved to: {os.path.abspath('out')}/{filename+self.color+'_trace_fits.npz'}",flush=True)
 
 
     def get_rots(self,arcfilename,datafilename,optimize=True) -> None:
