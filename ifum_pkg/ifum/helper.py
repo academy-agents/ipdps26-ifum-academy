@@ -24,13 +24,13 @@ def get_color_info(datafilename: str, arcfilename: str, flatfilename: str,
     '''
     gets some relevant directories more easily!
     '''
-    datadir = os.path.join(os.path.relpath("out"),datafilename+color+".fits")
-    arcdir = os.path.join(os.path.relpath("out"),arcfilename+color+".fits")
-    flatdir = os.path.join(os.path.relpath("out"),flatfilename+"_withbias_"+color+".fits")
-    cmraymask = os.path.join(os.path.relpath("out"),datafilename+color+"_cmray_mask.fits")
-    trace_data = os.path.join(os.path.relpath("out"),datafilename+color+"_trace_fits.npz")
-    trace_arc = os.path.join(os.path.relpath("out"),arcfilename+color+"_trace_fits.npz")
-    trace_flat = os.path.join(os.path.relpath("out"),flatfilename+color+"_trace_fits.npz")
+    datadir = os.path.join(os.path.abspath("out"),datafilename+color+".fits")
+    arcdir = os.path.join(os.path.abspath("out"),arcfilename+color+".fits")
+    flatdir = os.path.join(os.path.abspath("out"),flatfilename+"_withbias_"+color+".fits")
+    cmraymask = os.path.join(os.path.abspath("out"),datafilename+color+"_cmray_mask.fits")
+    trace_data = os.path.join(os.path.abspath("out"),datafilename+color+"_trace_fits.npz")
+    trace_arc = os.path.join(os.path.abspath("out"),arcfilename+color+"_trace_fits.npz")
+    trace_flat = os.path.join(os.path.abspath("out"),flatfilename+color+"_trace_fits.npz")
     bad_mask = bad_masks[0] if color=="b" else bad_masks[1]
     return datadir,arcdir,flatdir,cmraymask,trace_data,trace_arc,trace_flat,bad_mask
 

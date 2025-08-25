@@ -677,20 +677,28 @@ class Stitch():
             vs = {key: value[0] for key, value in best_fits.items()}
             hs = {key: value[1] for key, value in best_fits.items()}
             scales = {key: value[2] for key, value in best_fits.items()}
-            ax.plot(best_fits.keys(), list(vs.values()), label="Vertical Shift (v)", marker='o', color='sienna')
-            ax.plot(best_fits.keys(), list(hs.values()), label="Horizontal Shift (h)", marker='o', color='peru')
+            ax.plot(best_fits.keys(), list(vs.values()), label="Vertical Shift", marker='o', color='sienna')
+            ax.plot(best_fits.keys(), list(hs.values()), label="Horizontal Shift", marker='o', color='peru')
             ax.set_xlabel("Target File")
             ax.set_ylabel("shift (px)")
 
             ax2 = ax.twinx()
-            ax2.set_ylabel("scale (s)")
-            ax2.plot(best_fits.keys(), list(scales.values()), label="Scale (s)", marker='o', color='orchid')
+            ax2.set_ylabel("spectrograph temperature (°C)")
+
+            if self.color == "r":
+                temps = [17.812, 17.688, 17.5, 17.375, 17.312, 17.25, 17.062, 17.]
+            else:
+                temps = [17.812, 17.625, 17.5, 17.312, 17.25, 17.125, 17., 16.938]
+            temps = [temp for temp, key in zip(temps, best_fits.keys()) if key != self.datafilename]
+            ax2.plot(best_fits.keys(), temps, label="Echelle Temperature", marker='o', color='orchid')
+
+            # ax2.plot(best_fits.keys(), list(scales.values()), label="Scale (s)", marker='o', color='orchid')
 
             handles, labels = ax.get_legend_handles_labels()
             handles2, labels2 = ax2.get_legend_handles_labels()
-            plt.legend(handles + handles2, labels + labels2)
+            plt.legend(handles + handles2, labels + labels2, loc="lower center")
 
-            plt.title(f"Best Fits for {self.datafilename} {self.color}")
+            plt.title(f"Reference File {self.datafilename}{self.color} Best Fits",weight="bold",color="maroon")
             plt.savefig(os.path.join(os.path.abspath("out"), self.datafilename + self.color + "_best_fits.png"))
             plt.close(fig)
         except Exception as e:

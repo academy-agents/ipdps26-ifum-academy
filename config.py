@@ -54,7 +54,7 @@ def local_config():
 
     return config
 
-def midway_config():
+def midway_config(nodes):
     run_dir = "/home/babnigg/globus/IFU-M/runinfo"
     config = Config(
         run_dir=run_dir,
@@ -63,12 +63,12 @@ def midway_config():
                 label='Midway_HTEX_multinode',
                 address=address_by_hostname(),
                 worker_debug=True,
-                max_workers_per_node=100,
+                max_workers_per_node=48, # max workers on midway; see what happens if it's 1 get rid of option
                 provider=LocalProvider(
                     min_blocks=1,
                     # max_blocks=4,
                     parallelism=1,
-                    nodes_per_block=8, # match requested nodes
+                    nodes_per_block=nodes, # match requested nodes
                     launcher=SrunLauncher(),
                     worker_init='source $(conda info --base)/etc/profile.d/conda.sh; conda activate /home/babnigg/conda_envs/ifum_parsl'
                     ),

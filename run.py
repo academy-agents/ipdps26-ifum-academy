@@ -1,9 +1,10 @@
 import numpy as np
 import time
-from datetime import timedelta
+from datetime import timedelta,datetime,timezone
 import os
 import concurrent.futures
 import sys
+import argparse
 
 import parsl
 import ifum
@@ -15,10 +16,18 @@ from parsl.app.app import python_app
 if __name__ == "__main__":
     start = time.time()
 
+    # parse args, get nodes from submit script
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--nodes", type=int, default=1)
+    args = parser.parse_args()
+    nodes = args.nodes
+
     ######### INPUTS ########
 
     # directory containing unprocessed files
     directory = "/home/babnigg/globus/IFU-M/in/ut20240210/"
+
+    # create new output directory that is for each run of the data
 
     # all files included in a single stack, repeat where necessary
     #  only include string in file that includes all files from single exposure
@@ -56,11 +65,12 @@ if __name__ == "__main__":
         )
     )
 
-
+    print(f"{datetime.fromtimestamp(time.time(), tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")} UTC | workflow started", flush=True)
+    print(f"{len(set(data_filenames))} on-sky data | {len(set(arc_filenames))} arc lamp | {len(set(flat_filenames))} flat field (for each spectrograph)", flush=True)
 
     ######### CONFIG #########
 
-    config = config.midway_config()
+    config = config.midway_config(nodes=nodes)
     parsl.load(config)
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | parsl config loaded", flush=True)
 
@@ -286,13 +296,6 @@ if __name__ == "__main__":
 
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | cosmic ray agent processing started", flush=True)
 
-    # blue_cmray_result.result()
-    # red_cmray_result.result()
-
-    # print(f"{str(timedelta(seconds=int(time.time()-start)))} | cosmic ray masks completed", flush=True)
-
-
-
     # concurrent futures wait python docs / as_completed
 
 
@@ -462,10 +465,10 @@ if __name__ == "__main__":
 
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | first guess flat field based traces started", flush=True)
 
-    # ifum.flat_mask_wrapper(
-    #     first_guesses = first_guess_futures,
-    #     mask_args_s = mask_args_s
-    # )
+    ifum.flat_mask_wrapper(
+        first_guesses = first_guess_futures,
+        mask_args_s = mask_args_s
+    )
 
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | first guess flat field based traces completed", flush=True)
 
@@ -519,10 +522,11 @@ if __name__ == "__main__":
             sig_mult=sig_mult
         ))
 
-        mask_args["color"] = "r"
+        mask_args_r = dict(mask_args)
+        mask_args_r["color"] = "r"
         flat_traces.append(ifum.create_flatmask_app(
             dep_futures=[],
-            mask_args=mask_args,
+            mask_args=mask_args_r,
             center_deg=center_deg,
             sigma_deg=sigma_deg,
             sig_mult=sig_mult
@@ -549,11 +553,20 @@ if __name__ == "__main__":
             "mask_groups": mask_groups
         }
         arc_opts.append(ifum.optimize_arc_app([],mask_args,arcfilename,sig_mult,expected_peaks,optimize))
-        mask_args["color"] = "r"
-        arc_opts.append(ifum.optimize_arc_app([],mask_args,arcfilename,sig_mult,expected_peaks,optimize))
+        mask_args_r = dict(mask_args)
+        mask_args_r["color"] = "r"
+        arc_opts.append(ifum.optimize_arc_app([],mask_args_r,arcfilename,sig_mult,expected_peaks,optimize))
+
     for future in arc_opts:
         future.result()
-    print(f"{str(timedelta(seconds=int(time.time()-start)))} | traces optimized for arc data", flush=True)    
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | traces optimized for arc data", flush=True) 
+
+
+    # need to wait for cosmic ray to finish
+    blue_cmray_result.result()
+    red_cmray_result.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | cosmic ray masks completed", flush=True)
+   
 
     # 7-DATAOPT: optimize flat traces on on-sky science data, get rotations of spectral features
     expected_peaks = 25
@@ -568,8 +581,10 @@ if __name__ == "__main__":
             "mask_groups": mask_groups
         }
         data_opts.append(ifum.optimize_data_app([],mask_args,arcfilename,datafilename,sig_mult,expected_peaks,optimize))
-        mask_args["color"] = "r"
-        data_opts.append(ifum.optimize_data_app([],mask_args,arcfilename,datafilename,sig_mult,expected_peaks,optimize))
+        mask_args_r = dict(mask_args)
+        mask_args_r["color"] = "r"
+        data_opts.append(ifum.optimize_data_app([],mask_args_r,arcfilename,datafilename,sig_mult,expected_peaks,optimize))
+
     for future in data_opts:
         future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | traces optimized for science data", flush=True)    
@@ -585,11 +600,9 @@ if __name__ == "__main__":
             "mask_groups": mask_groups
         }
         arc_traces.append(ifum.create_mask_app([],mask_args,arcfilename,arcfilename,sig_mult))
-        mask_args["color"] = "r"
-        arc_traces.append(ifum.create_mask_app([],mask_args,arcfilename,arcfilename,sig_mult))
-    for future in arc_traces:
-        future.result()
-    print(f"{str(timedelta(seconds=int(time.time()-start)))} | arc optimized trace masks saved", flush=True)    
+        mask_args_r = dict(mask_args)
+        mask_args_r["color"] = "r"
+        arc_traces.append(ifum.create_mask_app([],mask_args_r,arcfilename,arcfilename,sig_mult))
 
     # 9-DATATRACE: create the mask files with the data trace optmizations
     copy = False
@@ -603,8 +616,14 @@ if __name__ == "__main__":
             "mask_groups": mask_groups
         }
         data_traces.append(ifum.create_mask_app([],mask_args,datafilename,arcfilename,sig_mult,copy))
-        mask_args["color"] = "r"
-        data_traces.append(ifum.create_mask_app([],mask_args,datafilename,arcfilename,sig_mult,copy))
+        mask_args_r = dict(mask_args)
+        mask_args_r["color"] = "r"
+        data_traces.append(ifum.create_mask_app([],mask_args_r,datafilename,arcfilename,sig_mult,copy))
+
+    for future in arc_traces:
+        future.result()
+    print(f"{str(timedelta(seconds=int(time.time()-start)))} | arc optimized trace masks saved", flush=True)   
+
     for future in data_traces:
         future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | data optimized trace masks saved", flush=True)    
@@ -625,8 +644,9 @@ if __name__ == "__main__":
             "mask_groups": mask_groups
         }
         rect_opt_data.append(ifum.optimize_center_app(rectify_args,"data",fix_sparse=True))
-        rectify_args["color"] = "r"        
-        rect_opt_data.append(ifum.optimize_center_app(rectify_args,"data",fix_sparse=True))
+        rectify_args_r = dict(rectify_args)
+        rectify_args_r["color"] = "r"        
+        rect_opt_data.append(ifum.optimize_center_app(rectify_args_r,"data",fix_sparse=True))
     for future in rect_opt_data:
         future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | fixed sparse data centers for rectification", flush=True)    
@@ -645,8 +665,9 @@ if __name__ == "__main__":
             "mask_groups": mask_groups
         }
         rect_opt_arc.append(ifum.optimize_center_app(rectify_args,"arc",fix_sparse=True))
-        rectify_args["color"] = "r"        
-        rect_opt_arc.append(ifum.optimize_center_app(rectify_args,"arc",fix_sparse=True))
+        rectify_args_r = dict(rectify_args)
+        rectify_args_r["color"] = "r"        
+        rect_opt_arc.append(ifum.optimize_center_app(rectify_args_r,"arc",fix_sparse=True))
     for future in rect_opt_arc:
         future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | fixed sparse arc centers for rectification", flush=True)    
@@ -665,8 +686,9 @@ if __name__ == "__main__":
             "mask_groups": mask_groups
         }
         rect_data.append(ifum.rectify_app(rectify_args,arc_or_data="data"))
-        rectify_args["color"] = "r"
-        rect_data.append(ifum.rectify_app(rectify_args,arc_or_data="data"))
+        rectify_args_r = dict(rectify_args)
+        rectify_args_r["color"] = "r"
+        rect_data.append(ifum.rectify_app(rectify_args_r,arc_or_data="data"))
     for future in rect_data:
         future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | rectified using the arc data", flush=True)    
@@ -685,8 +707,9 @@ if __name__ == "__main__":
             "mask_groups": mask_groups
         }
         rect_arc.append(ifum.rectify_app(rectify_args,arc_or_data="arc"))
-        rectify_args["color"] = "r"
-        rect_arc.append(ifum.rectify_app(rectify_args,arc_or_data="arc"))
+        rectify_args_r = dict(rectify_args)
+        rectify_args_r["color"] = "r"
+        rect_arc.append(ifum.rectify_app(rectify_args_r,arc_or_data="arc"))
     for future in rect_arc:
         future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | rectified using the on-sky science data", flush=True)    
@@ -706,9 +729,10 @@ if __name__ == "__main__":
             "total_masks": total_masks,
             "mask_groups": mask_groups
         }
-        calibs.append(ifum.calib_app(use_sky=True))
-        rectify_args["color"] = "r"
-        calibs.append(ifum.calib_app(use_sky=True))
+        calibs.append(ifum.calib_app(rectify_args,use_sky=True))
+        rectify_args_r = dict(rectify_args)
+        rectify_args_r["color"] = "r"
+        calibs.append(ifum.calib_app(rectify_args_r,use_sky=True))
     for future in calibs:
         future.result()
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | calibrations done using rectified spectra", flush=True)    
