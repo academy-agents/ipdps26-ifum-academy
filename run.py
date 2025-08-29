@@ -25,7 +25,7 @@ if __name__ == "__main__":
     ######### INPUTS ########
 
     # directory containing unprocessed files
-    directory = "/home/babnigg/globus/IFU-M/in/ut20240210/"
+    directory = "/home/babnigg/globus/IFU-M/in/ut20240210"
 
     # create new output directory that is for each run of the data
 
@@ -65,12 +65,13 @@ if __name__ == "__main__":
         )
     )
 
-    print(f"{datetime.fromtimestamp(time.time(), tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")} UTC | workflow started", flush=True)
+    start_time = datetime.fromtimestamp(time.time(), tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    print(f"{start_time} UTC | workflow started", flush=True)
     print(f"{len(set(data_filenames))} on-sky data | {len(set(arc_filenames))} arc lamp | {len(set(flat_filenames))} flat field (for each spectrograph)", flush=True)
 
     ######### CONFIG #########
 
-    config = config.midway_config(nodes=nodes)
+    config = config.local_config()
     parsl.load(config)
     print(f"{str(timedelta(seconds=int(time.time()-start)))} | parsl config loaded", flush=True)
 

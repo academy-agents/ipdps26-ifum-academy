@@ -40,9 +40,11 @@ def local_config():
         executors=[
             HighThroughputExecutor(
                 label="local_htex",
-                provider=LocalProvider(min_blocks=1,
-                                    max_blocks=1,
-                                    parallelism=1),
+                provider=LocalProvider(
+                    min_blocks=1,
+                    max_blocks=1,
+                    parallelism=1
+                ),
             )
         ],
         monitoring=MonitoringHub(
