@@ -10,7 +10,8 @@ git clone --single-branch --branch parsl https://github.com/babnigg/IFU-M.git
 
 Create a conda enviornment to run the pipeline. This will also include the installation of the ifum package, which has all necessary dependancies.
 ```
-conda create --name \<my-env\>
+conda create --name <my-env>
+conda activate <my-env>
 ```
 
 ```
