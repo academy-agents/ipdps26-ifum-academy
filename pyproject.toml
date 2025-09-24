@@ -1,0 +1,124 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ifum_agent"
+version = "2025.0.0"
+description = "Parsl+Academy integral field unit spectroscopy pipeline."
+authors = [
+    {name = "Daniel Babnigg"},
+    {name = "Alok Kamatar", email="alokvk2@uchicago.edu"}
+]
+readme = "README.md"
+requires-python = ">=3.7"
+
+dependencies = [
+    "notebook",
+    "pandas",
+    "numpy",
+    "scikit-learn",
+    "matplotlib",
+    "jupyter",
+    "parsl",
+    "astropy",
+    "scipy",
+    "scikit-image",
+    "academy-py",
+]
+
+[project.optional-dependencies]
+dev = [
+    "covdefaults>=2.2",
+    "coverage",
+    "mypy",
+    "pre-commit",
+    "pytest",
+    "pytest-asyncio>=1",
+    "pytest-cov",
+    "ruff>=0.2.0",
+    "tox",
+    "virtualenv",
+    "responses",
+]
+
+[tool.jupyter]
+notebook = true
+
+[tool.ruff]
+line-length = 79
+target-version = "py310"
+
+[tool.ruff.format]
+indent-style = "space"
+quote-style = "single"
+
+[tool.ruff.lint]
+# See all rules here: https://beta.ruff.rs/docs/rules
+select = [
+    # pyflakes
+    "F",
+    # pycodestyle
+    "E",
+    # mccabe
+    "C90",
+    # isort
+    "I",
+    # pep8-naming
+    "N",
+    # flake8-2020
+    "YTT",
+    # flake8-bugbear
+    "B",
+    # flake8-builtins
+    "A",
+    # flake8-commas
+    "COM",
+    # flake8-comprehensions
+    "C4",
+    # flake8-implicit-str-concat
+    "ISC",
+    # flake8-pytest-style
+    "PT",
+    # flake8-quotes
+    "Q",
+    # flake8-debugger
+    "T10",
+    # flake8-simplify
+    "SIM",
+    # PyLint
+    "PL",
+    # ruff-specific
+    "RUF",
+]
+extend-ignore = [
+    # Allow builtin module shadowing.
+    "A005",
+    # Allow nested with statements.
+    "SIM117",
+    # Too many arguments in function definition.
+    "PLR0913",
+]
+
+[tool.ruff.lint.flake8-pytest-style]
+parametrize-values-type = "tuple"
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "single"
+multiline-quotes = "double"
+
+[tool.ruff.lint.isort]
+force-single-line = true
+known-first-party = ["ifum_agent"]
+order-by-type = false
+required-imports = ["from __future__ import annotations"]
+
+[tool.ruff.lint.per-file-ignores]
+"*/__init__.py" = ["F401"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.setuptools.packages.find]
+exclude = ["tests*", "testing*"]
+namespaces = false

@@ -2,6 +2,7 @@
 # https://articles.adsabs.harvard.edu/pdf/1997PASP..109..614O
 # https://www.astro.uu.se/valdwiki/Air-to-vacuum%20conversion
 
+from ifum_agent.config import IfumConfig
 import numpy as np
 import scipy
 import os
@@ -24,16 +25,15 @@ class Calibrate():
     Methods:
         
     '''
-    def __init__(self, datafilename: str, arcfilename: str, flatfilename: str,
-                 wavelength, bad_masks, total_masks: int, mask_groups: int):
+    def __init__(self, datafilename: str, arcfilename: str, flatfilename: str, config: IfumConfig):
         self.datafilename = datafilename
         self.arcfilename = arcfilename
         self.flatfilename = flatfilename
-        self.bad_masks = bad_masks
-        self.total_masks = total_masks
-        self.mask_groups = mask_groups
+        self.bad_masks = config.bad_masks
+        self.total_masks = config.total_masks
+        self.mask_groups = config.mask_groups
 
-        if wavelength == "far red":
+        if config.wavelength == "far red":
             self.isol_sky_lines = [7794.112,7808.467,7821.503,#7949.204,7913.708*0.9+7912.252*0.1,
                     7964.650,7993.332,8014.059,8025.668*0.5+8025.952*0.5,#8052.020,
                     8061.979*0.5+8062.377*0.5,#8382.392*0.8+8379.903*0.1+8380.737*0.1,8310.719,8344.602*0.9+8343.033*0.1,
@@ -43,7 +43,7 @@ class Calibrate():
                     9001.115*0.5+9001.577*0.5,9037.952*0.5+9038.162*0.5,9049.232*0.6+9049.845*0.4,9374.318*0.1+9375.961*0.9,9419.729,
                     9439.650,9458.528,9476.748*0.4+9476.912*0.6,9502.815,9519.182*0.4+9519.527*0.6,
                     9552.534,9567.090*0.6+9567.588*0.4,9607.726,9620.630*0.7+9621.300*0.3]
-        elif wavelength == "blue":
+        elif config.wavelength == "blue":
             self.isol_sky_lines = [4861.3203,
                             5197.9282,
                             5577.3467,

@@ -1,6 +1,9 @@
-from parsl.app.app import python_app
-import numpy as np
+from concurrent.futures import Future
 import os
+
+import numpy as np
+from parsl import python_app
+from astropy.io import fits
 
 def get_x_from_point_simple(px, trace_poly, rotation_poly) -> np.ndarray:
     if isinstance(rotation_poly, float) and np.isnan(rotation_poly):
@@ -17,28 +20,19 @@ def get_x_from_point_simple(px, trace_poly, rotation_poly) -> np.ndarray:
 
         return (trace_b-rot_b)/(rot_m-trace_m)
 
-
-
-def get_color_info(datafilename: str, arcfilename: str, flatfilename: str, 
-                bad_masks: np.ndarray, color: str) -> list:
-    '''
-    gets some relevant directories more easily!
-    '''
-    datadir = os.path.join(os.path.abspath("out"),datafilename+color+".fits")
-    arcdir = os.path.join(os.path.abspath("out"),arcfilename+color+".fits")
-    flatdir = os.path.join(os.path.abspath("out"),flatfilename+"_withbias_"+color+".fits")
-    cmraymask = os.path.join(os.path.abspath("out"),datafilename+color+"_cmray_mask.fits")
-    trace_data = os.path.join(os.path.abspath("out"),datafilename+color+"_trace_fits.npz")
-    trace_arc = os.path.join(os.path.abspath("out"),arcfilename+color+"_trace_fits.npz")
-    trace_flat = os.path.join(os.path.abspath("out"),flatfilename+color+"_trace_fits.npz")
-    bad_mask = bad_masks[0] if color=="b" else bad_masks[1]
-    return datadir,arcdir,flatdir,cmraymask,trace_data,trace_arc,trace_flat,bad_mask
-
-
-
 # potentially use batch computation here as well? 276 is large number
 @python_app
-def get_spectrum_fluxbins(mask,bins,sigma_traces,sig_mult,datadir,cmraymask,trace_data,rand_dots=50) -> np.ndarray:
+def get_spectrum_fluxbins(
+    mask,
+    bins,
+    sigma_traces,
+    sig_mult,
+    datadir,
+    cmraymask,
+    trace_data,
+    calib_data,
+    rand_dots=50
+) -> np.ndarray:
     '''
     gets flux-binned spectrum for a given spectra trace
     inputs:
@@ -62,16 +56,17 @@ def get_spectrum_fluxbins(mask,bins,sigma_traces,sig_mult,datadir,cmraymask,trac
 
     with fits.open(datadir) as dataf, \
          fits.open(cmraymask) as cmrayf, \
-         np.load(trace_data) as npzdata:
+         np.load(trace_data) as npztrace, \
+         np.load(calib_data) as npzcalib:
         
         data = dataf[0].data
         cmray_mask = cmrayf[0].data
         
-        traces = npzdata["traces"]
-        rotations = npzdata["rotation_traces"]
+        traces = npztrace["traces"]
+        rotations = npztrace["rotation_traces"]
         stds = sigma_traces
-        x_s = npzdata["rect_x"]
-        wl_calib = npzdata["wl_calib"]
+        x_s = npzcalib["rect_x"]
+        wl_calib = npzcalib["wl_calib"]
 
         # sometimes rotation can't be calculated, if it doesn't do not include in computation
         use_rot = not (isinstance(rotations, float) and np.isnan(rotations))
@@ -168,25 +163,18 @@ def get_spectrum_fluxbins(mask,bins,sigma_traces,sig_mult,datadir,cmraymask,trac
         return spectrum, pixels, wls
 
 
-
-def get_spectra(sig_mult,bins,color,info,use_global=False) -> None:
-    import numpy as np
-    from astropy.io import fits
-
-    datafilename,arcfilename,flatfilename,wavelength,bad_masks,total_masks,mask_groups = info
-
-    datadir,_,_,cmraymask,trace_data,_,_,bad_mask = get_color_info(
-        datafilename,
-        arcfilename,
-        flatfilename,
-        bad_masks,
-        color)
-
-    data = fits.open(datadir)[0].data
-    cmray = fits.open(cmraymask)[0].data
+def launch_specturm_fluxbins(
+    datadir,
+    cmraymask,
+    trace_data,
+    calib_data,
+    bad_mask,
+    total_masks,
+    sig_mult,
+    bins,
+    use_global=False,
+) -> list[float | Future[float]]:    
     npzdata = np.load(trace_data)
-    wl_mask = np.zeros(data.shape)
-
     sigma_traces = npzdata["init_traces_sigma"]
     if use_global:
         mean_sigma_trace = np.nanmean(sigma_traces[:,-1:],axis=0)
@@ -195,22 +183,35 @@ def get_spectra(sig_mult,bins,color,info,use_global=False) -> None:
     results = []
     for mask in range(total_masks//2):
         if mask not in bad_mask:
-            results.append(get_spectrum_fluxbins(mask,bins,sigma_traces,sig_mult,datadir,cmraymask,trace_data))
+            results.append(
+                get_spectrum_fluxbins(
+                    mask,
+                    bins,
+                    sigma_traces,
+                    sig_mult,
+                    datadir,
+                    cmraymask,
+                    trace_data,
+                    calib_data,
+                ))
         else:
             results.append(np.nan)
+    
+    return results
 
+@python_app
+def collect_spectra(datadir, total_masks, bins, bad_mask, *specturm_bins, outputs=()):
     spectra = np.empty((total_masks//2,bins.shape[0]))
-
+    data = fits.open(datadir)[0].data
+    wl_mask = np.zeros(data.shape)
     for mask in range(total_masks//2):
         if mask not in bad_mask:
-            spectra[mask],px,wl = results[mask].result()
+            spectra[mask],px,wl = specturm_bins[mask]
             wl_mask[px[:,0],px[:,1]] = wl
         else:
             spectra[mask] = np.nan
     
-    save_dict = dict(npzdata)
+    save_dict = {}
     save_dict["wl_bins"] = bins
     save_dict["flux_bins"] = spectra
-    np.savez(trace_data, **save_dict)
-
-    return None
+    np.savez(outputs[0], **save_dict)

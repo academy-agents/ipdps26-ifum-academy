@@ -20,20 +20,28 @@ class Rectify():
     Methods:
         
     '''
-    def __init__(self, color: str, datafilename: str, arcfilename: str, flatfilename: str,
-                 wavelength, bad_masks, total_masks: int, mask_groups: int):
-        self.color = color
-        self.datafilename = datafilename
-        self.arcfilename = arcfilename
-        self.flatfilename = flatfilename
-        self.datadir = os.path.join(os.path.relpath("out"),self.datafilename+self.color+".fits")
-        self.arcdir = os.path.join(os.path.relpath("out"),self.arcfilename+self.color+".fits")
-        self.flatdir = os.path.join(os.path.relpath("out"),self.flatfilename+"_withbias_"+self.color+".fits")
-        self.cmraymask = os.path.join(os.path.relpath("out"),self.datafilename+self.color+"_cmray_mask.fits")
-        self.trace_data = os.path.join(os.path.relpath("out"),self.datafilename+self.color+"_trace_fits.npz")
-        self.trace_arc = os.path.join(os.path.relpath("out"),self.arcfilename+self.color+"_trace_fits.npz")
-        self.trace_flat = os.path.join(os.path.relpath("out"),self.flatfilename+self.color+"_trace_fits.npz")
-        self.bad_mask = bad_masks[0] if color=="b" else bad_masks[1]
+    def __init__(
+        self,
+        datadir,
+        arcdir,
+        flatdir_biased,
+        cmraymask,
+        trace_data,
+        trace_arc,
+        trace_flat,
+        wavelength,
+        bad_mask,
+        total_masks: int, 
+        mask_groups: int
+    ):
+        self.datadir = datadir
+        self.arcdir = arcdir
+        self.flatdir = flatdir_biased
+        self.cmraymask = cmraymask
+        self.trace_data = trace_data
+        self.trace_arc = trace_arc
+        self.trace_flat = trace_flat
+        self.bad_mask = bad_mask
         self.total_masks = total_masks
         self.mask_groups = mask_groups
 
@@ -212,21 +220,29 @@ class Rectify():
         n = 1 + 0.00008336624212083+0.02408926869968/(130.1065924522-s**2)+0.0001599740894897/(38.92568793293-s**2)
         return wavelengths*n
 
-    def optimize_centers(self,arc_or_data="arc",sig_mult=3,fix_sparse=False) -> None: # re-fit gaussian centers with better trace masks
+    def optimize_centers(
+        self,
+        maskdir,
+        output,
+        arc_or_data="arc",
+        sig_mult=3,
+        fix_sparse=False,
+    ) -> None:
+        
+        maskdir = os.path.join(os.path.relpath("out"),self.arcfilename+self.color+"_mask.fits")
+        mask_data = fits.open(maskdir)[0].data
+
         if arc_or_data == "arc":
             npzdir = self.trace_arc
             npzfile = np.load(npzdir)
             data = fits.open(self.arcdir)[0].data
-            maskdir = os.path.join(os.path.relpath("out"),self.arcfilename+self.color+"_mask.fits")
-            mask_data = fits.open(maskdir)[0].data
             cmrays = False
         else:
             npzdir = self.trace_data
             npzfile = np.load(npzdir)
             data = fits.open(self.datadir)[0].data
-            maskdir = os.path.join(os.path.relpath("out"),self.arcfilename+self.color+"_mask.fits")
-            mask_data = fits.open(maskdir)[0].data
             cmrays = True
+
         centers = npzfile["centers"]
         traces_sigma = np.load(self.trace_flat)["traces_sigma"]
         masks_l = np.arange(self.total_masks//2)+1
@@ -363,21 +379,19 @@ class Rectify():
         # else:
             # centers_opt = centers
 
-        save_dict = dict(npzfile)
+        save_dict = {}
         save_dict["centers_opt"] = centers_opt
         save_dict["rect_int"] = intensities
-        np.savez(npzdir, **save_dict)
+        np.savez(output, **save_dict)
 
 
-    def rectify(self,arc_or_data="arc") -> None:
+    def rectify(self, centers_file, output, arc_or_data="arc") -> None:
         if arc_or_data == "arc":
-            npzdir = self.trace_arc
-            npzfile = np.load(npzdir)
             data = fits.open(self.arcdir)[0].data
         else:
-            npzdir = self.trace_data
-            npzfile = np.load(npzdir)
             data = fits.open(self.datadir)[0].data
+        
+        npzfile = np.load(centers_file)
         centers = npzfile["centers_opt"]
 
         # sort low to high
@@ -496,10 +510,10 @@ class Rectify():
         #         a = ifum_utils.get_spectrum_simple(data,mask_data,m)
         #         intensities[i] = a
 
-        save_dict = dict(npzfile)
+        save_dict = {dict(npzfile)}
         save_dict["rect_x"] = x_s
-        # save_dict["rect_int"] = intensities
-        np.savez(npzdir, **save_dict)
+        save_dict["rect_int"] = npzfile["rect_int"]
+        np.savez(output, **save_dict)
 
         # print(intensities.shape)
         # plt.imshow(intensities,origin="lower")
@@ -510,22 +524,17 @@ class Rectify():
         # plt.axis("off")
         # plt.show()
 
-    def overwrite_rect(self,type1="arc",type2="data") -> None:
-        # overwrite type1 to type2
-        npzdir1 = self.trace_arc if type1=="arc" else self.trace_data
-        npzfile1 = np.load(npzdir1)
-        
-        npzdir2 = self.trace_data if type2=="data" else self.trace_arc
-        npzfile2 = np.load(npzdir2)
-        
-        save_dict = dict(npzfile2)
-        save_dict["rect_x"] = npzfile1["rect_x"]
-        np.savez(npzdir2, **save_dict)
-
-
-    def calib(self,sig_mult=3,use_sky=True,deg=4) -> None:
-        npz_data = np.load(self.trace_data)
-        npz_arc = np.load(self.trace_arc)
+    def calib(
+        self, 
+        rect_data, 
+        rect_arc,
+        output,
+        sig_mult=3, 
+        use_sky=True, 
+        deg=4,
+    ) -> None:
+        npz_data = np.load(rect_data)
+        npz_arc = np.load(rect_arc)
         traces_sigma = np.load(self.trace_flat)["traces_sigma"]
 
         # IMPORTANT: x's are considered to be the same for now
@@ -756,11 +765,11 @@ class Rectify():
         full_best_fit[-1] += shift
         wl_x = self.air_to_vacuum(np.poly1d(full_best_fit)(data_xs))
 
-        save_dict = dict(npz_data)
+        save_dict = {}
         save_dict["rect_x"] = data_xs
         save_dict["rect_wl"] = wl_x
         save_dict["wl_calib"] = full_best_fit
-        np.savez(self.trace_data, **save_dict)
+        np.savez(output, **save_dict)
 
     def _viz(self) -> None:
         npz_data = np.load(self.trace_data)
@@ -872,16 +881,27 @@ class Rectify():
 
 
 @python_app
-def optimize_center_app(rectify_args,arc_or_data,fix_sparse):
+def optimize_center_app(
+    rectify_args,
+    maskdir, 
+    arc_or_data,
+    fix_sparse,
+    outputs=()
+):
     rectify = Rectify(**rectify_args)
-    return rectify.optimize_centers(arc_or_data=arc_or_data,fix_sparse=fix_sparse)
+    return rectify.optimize_centers(
+        maskdir=maskdir,
+        output=outputs[0],
+        arc_or_data=arc_or_data,
+        fix_sparse=fix_sparse
+    )
 
 @python_app
-def rectify_app(rectify_args,arc_or_data):
+def rectify_app(rectify_args, centers_file, arc_or_data, outputs=()):
     rectify = Rectify(**rectify_args)
-    return rectify.rectify(arc_or_data)
+    return rectify.rectify(centers_file, outputs[0], arc_or_data)
 
 @python_app
-def calib_app(rectify_args,use_sky):
+def calib_app(rectify_args, rect_data, rect_arc, use_sky, outputs=()):
     rectify = Rectify(**rectify_args)
-    return rectify.calib(use_sky=use_sky)
+    return rectify.calib(rect_data, rect_arc, outputs[0], use_sky=use_sky)
