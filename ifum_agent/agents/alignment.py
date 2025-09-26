@@ -9,12 +9,14 @@ import os
 import uuid
 from astropy.io import fits
 import numpy as np
+from scipy import ndimage
 from scipy.optimize import minimize
 
 from academy.agent import Agent
 from academy.agent import action
 from academy.handle import Handle
 from academy.exchange import ExchangeFactory
+from academy.logging import init_logging
 
 from parsl.app.app import join_app
 
@@ -31,18 +33,30 @@ class AlignmentParameters(NamedTuple):
             self.scale / other.scale,
             max(self.std, other.std),
         )
+    
+    def __add__(self, other: AlignmentParameters):
+        return AlignmentParameters(
+            self.h_shift + other.h_shift,
+            self.v_shift + other.v_shift,
+            self.scale * other.scale,
+            max(self.std, other.std),
+        )
 
 class AlignmentAgent(Agent):
     def __init__(
         self,
     ) -> None:
         super().__init__()
-        self.logger = logging.getLogger("Alignment")
+        self.logger = logging.getLogger("alignment_agent")
         
         # Index corresponds to time
         # None means we haven't seen the timestep before
         self.params_by_time: defaultdict[int, AlignmentParameters | None] = defaultdict()
         self.params_by_time[0] = AlignmentParameters(0, 0, 1, 0)
+    
+    @action
+    async def noop(self) -> None:
+        return None
 
     def initial_guess(
         self, 
@@ -62,7 +76,7 @@ class AlignmentAgent(Agent):
         return True, AlignmentParameters(0, 0, 1, float('inf'))
     
     def shift_and_scale(self, image, v_shift, h_shift, scale=1.0, order=1):
-        shifted_image = np.ndimage.shift(
+        shifted_image = ndimage.shift(
             image,
             (v_shift,h_shift),
             order=order,
@@ -180,22 +194,22 @@ class AlignmentAgent(Agent):
                 reference_file,
                 target_file,
                 area=300,
-                x0=np.array([best_params[0].v_shift, best_params[0].h_shift, best_params[0].scale]),
+                x0=np.array([best_params.v_shift, best_params.h_shift, best_params.scale]),
                 bounds=bounds
             )
 
             # Store result
-            result_key = f"{reference_file}_{target_file}_{iter}"
-            self.optimization_results[result_key] = {
-                "v_shift": best_v,
-                "h_shift": best_h,
-                "scale": best_s,
-                "std_value": std_value,
-                "std_cutoff": std_cutoff
-            }
+            # result_key = f"{reference_file}_{target_file}_{iter}"
+            # self.optimization_results[result_key] = {
+            #     "v_shift": best_v,
+            #     "h_shift": best_h,
+            #     "scale": best_s,
+            #     "std_value": std_value,
+            #     "std_cutoff": std_cutoff
+            # }
 
             # Update best parameters if this result is better
-            if std_value < best_params:
+            if std_value < best_params.std:
                 best_params =  AlignmentParameters(
                     best_h,
                     best_v,
@@ -221,20 +235,26 @@ class AlignmentAgent(Agent):
         reference_file: str,
         target_timestep: int,
         target_file: str,
+        _id: uuid.UUID | None = None
     ) -> AlignmentParameters:
-        _id = uuid.uuid1()
-        self.logger.info(f"START alignment-exec {_id}")
+        if _id is None:
+            _id = uuid.uuid1()
+            self.logger.info(f"START alignment-exec {_id}")
+
         if reference_timestep > target_timestep:
-            result, _ = await self.calculate_alignment(
+            result = await self.calculate_alignment(
                 target_timestep,
                 target_file,
                 reference_timestep,
                 reference_file,
+                _id=_id,
             )
-            return AlignmentParameters(0, 0, 1) - result
+            self.logger.info(f"END alignment-exec {_id}")
+            return AlignmentParameters(0, 0, 1, 0) - result
         
         optimize, initial_guess = self.initial_guess(target_timestep, reference_timestep)
         if not optimize:
+            self.logger.info(f"END alignment-exec {_id}")
             return initial_guess
         
         result = self.optimize_parameters(reference_file, target_file, initial_guess)
@@ -245,7 +265,7 @@ class AlignmentAgent(Agent):
         
 
 async def calculate_alignment(
-    agent: Handle[AlignmentAgent],
+    agent: AlignmentAgent,
     factory: ExchangeFactory[Any],
     reference_timestep: int,
     reference_file: str,
@@ -262,6 +282,7 @@ async def calculate_alignment(
 
 @join_app
 def calculate_alignment_app(
+    loop: asyncio.AbstractEventLoop,
     agent: Handle[AlignmentAgent],
     factory: ExchangeFactory[Any],
     reference_timestep: int,
@@ -269,7 +290,6 @@ def calculate_alignment_app(
     target_timestep: int,
     target_file: str,
 ) -> AlignmentParameters:
-    loop = asyncio.get_event_loop()
     future = asyncio.run_coroutine_threadsafe(
         calculate_alignment(
             agent,

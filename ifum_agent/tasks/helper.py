@@ -3,6 +3,7 @@ import os
 
 import numpy as np
 from parsl import python_app
+from parsl import join_app
 from astropy.io import fits
 
 def get_x_from_point_simple(px, trace_poly, rotation_poly) -> np.ndarray:
@@ -161,17 +162,21 @@ def get_spectrum_fluxbins(
         spectrum[spectrum==0] = np.nan
 
         return spectrum, pixels, wls
+    
+@python_app
+def get_specturm_fluxbins_bad():
+    return (np.nan, None, None)
 
-
-def launch_specturm_fluxbins(
-    datadir,
-    cmraymask,
-    trace_data,
-    calib_data,
-    bad_mask,
-    total_masks,
-    sig_mult,
-    bins,
+@join_app
+def launch_spectrum_fluxbins(
+    datadir: str,
+    cmraymask:str,
+    trace_data: str,
+    calib_data: str,
+    bad_mask: np.ndarray,
+    total_masks: int,
+    sig_mult: float,
+    bins: np.ndarray,
     use_global=False,
 ) -> list[float | Future[float]]:    
     npzdata = np.load(trace_data)
@@ -195,12 +200,12 @@ def launch_specturm_fluxbins(
                     calib_data,
                 ))
         else:
-            results.append(np.nan)
+            results.append(get_specturm_fluxbins_bad())
     
     return results
 
 @python_app
-def collect_spectra(datadir, total_masks, bins, bad_mask, *specturm_bins, outputs=()):
+def collect_spectra(datadir, total_masks, bins, bad_mask, specturm_bins, outputs=()):
     spectra = np.empty((total_masks//2,bins.shape[0]))
     data = fits.open(datadir)[0].data
     wl_mask = np.zeros(data.shape)

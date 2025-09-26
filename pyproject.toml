@@ -20,7 +20,7 @@ dependencies = [
     "scikit-learn",
     "matplotlib",
     "jupyter",
-    "parsl",
+    "parsl[monitoring]",
     "astropy",
     "scipy",
     "scikit-image",
@@ -122,3 +122,14 @@ convention = "google"
 [tool.setuptools.packages.find]
 exclude = ["tests*", "testing*"]
 namespaces = false
+
+[tool.mypy]
+python_version = "3.12"
+plugins = [
+    "academy.mypy_plugin.py",
+    "mypy.plugins.proper_plugin",
+    "proxystore.mypy_plugin",
+    "pydantic.mypy",
+]
+disable_error_code = "import-untyped"
+no_implicit_optional = true
