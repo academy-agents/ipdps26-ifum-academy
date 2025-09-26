@@ -13,7 +13,7 @@ import numpy as np
 import os
 
 class IfumConfig(NamedTuple):
-    bad_masks: np.array[int]
+    bad_masks: np.ndarray[int]
     wcs_stars: np.ndarray[float]
     total_masks: int
     mask_groups: int
@@ -21,7 +21,7 @@ class IfumConfig(NamedTuple):
     wavelength: Literal["far red", "blue"]
     bins: np.ndarray[int]
     bin_to_2x1: bool = True
-    sig_mult = 1.5
+    sig_mult: float = 1.5
 
 def get_ifum_config(
     bad_blues: list[int],

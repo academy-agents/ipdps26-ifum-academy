@@ -1,16 +1,17 @@
 import numpy as np
 from astropy.io import fits
 from scipy.ndimage import convolve
+from scipy import ndimage
 from astropy.convolution import Gaussian2DKernel
 
 from parsl import python_app
 
 from ifum_agent.agents.alignment import AlignmentParameters
 
-def shift_and_scale(self, image, v_shift, h_shift, scale=1.0, order=1):
+def shift_and_scale(image, v_shift, h_shift, scale=1.0, order=1):
     # order = 1 -> bilinear interpolation
 
-    shifted_image = np.ndimage.shift(
+    shifted_image = ndimage.shift(
         image,
         (v_shift,h_shift),
         order=order,
@@ -20,8 +21,8 @@ def shift_and_scale(self, image, v_shift, h_shift, scale=1.0, order=1):
     
     return shifted_image * scale
 
-def subtract_ims(self, v_shift, h_shift, scale, refdata, data, margin, cutoff):
-    shifted_data = self.shift_and_scale(data, v_shift, h_shift, scale)
+def subtract_ims(v_shift, h_shift, scale, refdata, data, margin, cutoff):
+    shifted_data = shift_and_scale(data, v_shift, h_shift, scale)
     
     subtracted = refdata[margin:-margin, margin:-margin] - shifted_data[margin:-margin, margin:-margin]
     # turn outliers to NaN (top&bottom cutoff_perc%)

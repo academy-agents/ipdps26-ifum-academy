@@ -222,16 +222,13 @@ class Rectify():
 
     def optimize_centers(
         self,
-        maskdir,
+        arc_maskdir,
         output,
         arc_or_data="arc",
         sig_mult=3,
         fix_sparse=False,
     ) -> None:
-        
-        maskdir = os.path.join(os.path.relpath("out"),self.arcfilename+self.color+"_mask.fits")
-        mask_data = fits.open(maskdir)[0].data
-
+        mask_data = fits.open(arc_maskdir)[0].data
         if arc_or_data == "arc":
             npzdir = self.trace_arc
             npzfile = np.load(npzdir)
@@ -244,7 +241,9 @@ class Rectify():
             cmrays = True
 
         centers = npzfile["centers"]
+        print(centers)
         traces_sigma = np.load(self.trace_flat)["traces_sigma"]
+        print(traces_sigma)
         masks_l = np.arange(self.total_masks//2)+1
 
         if np.intersect1d(self.bad_mask,np.arange(self.total_masks//2)).size > 0:
@@ -343,7 +342,9 @@ class Rectify():
         centers_opt = np.zeros_like(centers)
         for peak in range(len(centers)):
             for i,mask in enumerate(masks_l):
+                print(f"Mask {i}, {type(mask)}, {type(self.bad_mask)}")
                 if (mask-1) not in self.bad_mask:
+                    print(f"Mask {i}, {mask}: {traces_sigma[int(mask-1)]}")
                     offset = math.ceil(sig_mult*np.median(np.poly1d(traces_sigma[int(mask-1)])(np.arange(data.shape[0]))))
                     try:
                         if (centers[peak][i]+offset)<(~np.isnan(intensities[i])).cumsum(0).argmax(0):
@@ -510,7 +511,7 @@ class Rectify():
         #         a = ifum_utils.get_spectrum_simple(data,mask_data,m)
         #         intensities[i] = a
 
-        save_dict = {dict(npzfile)}
+        save_dict = dict(npzfile)
         save_dict["rect_x"] = x_s
         save_dict["rect_int"] = npzfile["rect_int"]
         np.savez(output, **save_dict)
@@ -883,14 +884,14 @@ class Rectify():
 @python_app
 def optimize_center_app(
     rectify_args,
-    maskdir, 
+    arc_maskdir, 
     arc_or_data,
     fix_sparse,
     outputs=()
 ):
     rectify = Rectify(**rectify_args)
     return rectify.optimize_centers(
-        maskdir=maskdir,
+        arc_maskdir=arc_maskdir,
         output=outputs[0],
         arc_or_data=arc_or_data,
         fix_sparse=fix_sparse

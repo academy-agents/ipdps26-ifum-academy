@@ -1,5 +1,6 @@
 import functools
 import os
+from typing import Any
 import numpy as np
 from astropy.io import fits
 import scipy
@@ -7,14 +8,20 @@ import math
 import matplotlib.pyplot as plt
 import scipy.optimize
 from .utils import *
-from parsl.app.app import python_app
+from parsl import python_app
+from parsl import join_app
 
 from sklearn.cluster import DBSCAN
 
 
 
 class Mask():
-    def __init__(self, bad_masks, total_masks: int, mask_groups: int):
+    def __init__(
+        self,
+        bad_masks: list[int],
+        total_masks: int,
+        mask_groups: int
+    ):
         self.bad_mask = bad_masks
         self.total_masks = total_masks
         self.mask_groups = mask_groups
@@ -139,18 +146,22 @@ class Mask():
                 traces[i,:] = np.nan
                 traces_sigma[i,:] = np.nan
 
-        np.savez(output, {
-            'traces': traces,
-            'traces_sigma': traces_sigma
-        })
-
+        np.savez(output, traces=traces, traces_sigma=traces_sigma)
         return traces, traces_sigma
     
-    def create_mask_flat(self, target_file, trace_file, sig_mult, output, flatfile_mask, copy=None) -> None:
+    def create_mask_flat(
+        self, 
+        target_file: str, 
+        trace_file: str, 
+        sig_mult: float, 
+        output: str, 
+        flatfile_mask: str | None = None, 
+        copy=None
+    ) -> None:
         flat_data = fits.open(target_file)[0].data
         npzfile = np.load(trace_file)
         traces = npzfile["traces"]
-        traces_sigma = npzfile["traces_sigma"]
+        traces_sigma = npzfile["traces_sigma"] if "traces_sigma" in npzfile else npzfile['init_traces_sigma']
 
         if 'init_traces' in npzfile and np.array_equiv(traces, npzfile["init_traces"]): # if traces are the same, do not waste time creating mask. instead use arc's
             fits.writeto(output, data=fits.open(flatfile_mask)[0].data, overwrite=True)
@@ -169,8 +180,8 @@ class Mask():
     
     def optimize_trace(
             self,
-            flat_file_biased,
-            traget_file,
+            flatfile_mask,
+            target_file,
             trace_file,
             sig_mult,
             output,
@@ -178,8 +189,8 @@ class Mask():
             expected_peaks = 30,
             optimize = True,
         ) -> None:
-        data = fits.open(traget_file)[0].data
-        mask_data = fits.open(flat_file_biased)[0].data
+        data = fits.open(target_file)[0].data
+        mask_data = fits.open(flatfile_mask)[0].data
         if cmray_file:
             cmray_data = fits.open(cmray_file)[0].data
 
@@ -273,7 +284,7 @@ class Mask():
             top_args = np.array(peak_ints).argsort()[-expected_peaks:][::-1]
             peak_xs = peak_xs[top_args,:]
         else:
-            print(f"{traget_file}: only {peak_xs.shape[0]}/{expected_peaks} peaks detected")
+            print(f"{target_file}: only {peak_xs.shape[0]}/{expected_peaks} peaks detected")
         
         # get centers for each peak area for each mask
         centers = np.empty((len(peaks),len(intensities)))
@@ -777,12 +788,12 @@ def stack_gaussian_fits(xs, mask, masks_split, *all_fits, outputs=()):
     np.savez(outputs[0], **save_dict)
     return
 
-@python_app(cache=True)
+@python_app
 def first_guess_app(biased_file, mask_args, polydeg=3):
     mask = Mask(**mask_args)
     return mask.first_guess(biased_file, polydeg)
 
-@functools.cache
+@join_app
 def flat_mask_wrapped(biased_file, first_guess, mask_args, sampling=40, outputs=()):
     # print(f"IN FUNCTION: {mask_args}", flush=True)
     mask = Mask(**mask_args)
@@ -814,52 +825,65 @@ def flat_mask_wrapped(biased_file, first_guess, mask_args, sampling=40, outputs=
     return stack_gaussian_fits(x_s, mask, masks_split, *all_fit_futures, outputs=outputs)
     
 
-@python_app(cache=True)
-def create_flatmask_app(biased_file, mask_data, mask_args, center_deg, sigma_deg, sig_mult, outputs=()):
+@python_app
+def create_flatmask_app(
+    biased_file: str, 
+    mask_data: str, 
+    mask_args: dict[str, Any], 
+    center_deg: float, 
+    sigma_deg: float, 
+    sig_mult: float, 
+    outputs: list | tuple =()
+) -> None:
     mask = Mask(**mask_args)
     mask.get_flat_traces(mask_data, center_deg, sigma_deg, outputs[0])
-    mask.create_mask_flat(biased_file, outputs[0], outputs[1], sig_mult)
+    mask.create_mask_flat(
+        target_file=biased_file, 
+        trace_file=outputs[0], 
+        sig_mult=sig_mult,
+        output=outputs[1],
+    )
 
-@python_app(cache=True)
+@python_app
 def optimize_arc_app(
     mask_args, 
-    biased_file, 
-    arc_file, 
-    trace_file, 
-    sig_mult, 
-    expected_peaks, 
-    optimize=True,
-    outputs=(),
+    flatfile_mask: str, 
+    arc_file: str, 
+    trace_file: str, 
+    sig_mult: float, 
+    expected_peaks: int, 
+    optimize: bool = True,
+    outputs: list | tuple = (),
 ):
     mask = Mask(**mask_args)
     return mask.optimize_trace(
-        biased_file,
-        arc_file,
-        trace_file,
-        outputs[0],
-        sig_mult,
-        False,
+        flatfile_mask=flatfile_mask,
+        target_file=arc_file,
+        trace_file=trace_file,
+        output=outputs[0],
+        sig_mult=sig_mult,
+        cmray_file=None,
         expected_peaks=expected_peaks,
         optimize=optimize
     )
 
-@python_app(cache=True)
+@python_app
 def optimize_data_app(
     mask_args,
-    biased_file,
-    data_file,
-    flat_trace_file,
-    arc_trace_file,
-    cmray_file,
-    sig_mult,
-    expected_peaks,
-    optimize,
+    flatfile_mask: str,
+    data_file: str,
+    flat_trace_file: str,
+    arc_trace_file: str,
+    cmray_file: str,
+    sig_mult: float,
+    expected_peaks: int,
+    optimize: bool,
     outputs=()
 ):
     mask = Mask(**mask_args)
     mask.optimize_trace(
-        flat_file_biased=biased_file,
-        traget_file=data_file,
+        flatfile_mask=flatfile_mask,
+        target_file=data_file,
         trace_file=flat_trace_file,
         sig_mult=sig_mult,
         cmray_file=cmray_file,
@@ -872,15 +896,14 @@ def optimize_data_app(
         outputs[0],
         optimize=optimize
     )
-    return None
 
-@python_app(cache=True)
+@python_app
 def create_mask_app(mask_args, target_file, trace_file, sig_mult, flatfile_mask, outputs=()):
     mask = Mask(**mask_args)
     return mask.create_mask_flat(
-        target_file,
-        trace_file,
-        sig_mult,
-        outputs[0],
-        flatfile_mask
+        target_file=target_file,
+        trace_file=trace_file,
+        sig_mult=sig_mult,
+        output=outputs[0],
+        flatfile_mask=flatfile_mask
     )

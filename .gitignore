@@ -8,3 +8,7 @@ notes*
 *.png
 job*
 cmd_*.sh
+*.rdb
+redis.log
+runs
+venv

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import pickle
 
 from parsl.addresses import address_by_hostname
 from parsl.addresses import address_by_interface
@@ -11,6 +12,10 @@ from parsl.providers import LocalProvider
 from parsl.launchers import SrunLauncher
 from parsl.usage_tracking.levels import LEVEL_1
 from parsl.monitoring.monitoring import MonitoringHub
+from parsl.data_provider.files import File
+from parsl.dataflow.memoization import id_for_memo
+from parsl.dataflow.dependency_resolvers import DEEP_DEPENDENCY_RESOLVER
+from parsl.utils import get_all_checkpoints
 
 def get_htex_local_config(
     run_dir: str,
@@ -32,6 +37,10 @@ def get_htex_local_config(
         ),
         run_dir=run_dir,
         initialize_logging=False,
+        dependency_resolver=DEEP_DEPENDENCY_RESOLVER,
+        exit_mode="skip",
+        checkpoint_mode = 'task_exit',
+        checkpoint_files = get_all_checkpoints(run_dir),
     )
 
 
@@ -72,6 +81,7 @@ def get_htex_aurora_cpu_config(
         ),
         run_dir=run_dir,
         initialize_logging=False,
+        dependency_resolver=DEEP_DEPENDENCY_RESOLVER,
     )
 
 
@@ -95,6 +105,7 @@ def get_htex_aurora_local_config(
         ),
         run_dir=run_dir,
         initialize_logging=False,
+        dependency_resolver=DEEP_DEPENDENCY_RESOLVER,
     )
 
 def get_midway_cpu_config(
@@ -129,6 +140,7 @@ def get_midway_cpu_config(
             logging_endpoint=f"sqlite:///{os.path.join(run_dir, 'monitoring.db')}"
         ),
         usage_tracking=LEVEL_1,
+        dependency_resolver=DEEP_DEPENDENCY_RESOLVER,
     )
 
     return config
@@ -145,3 +157,8 @@ def get_parsl_config(name: str, run_dir: str, workers_per_node: int):
         os.path.join(run_dir, 'parsl'),
         workers_per_node=workers_per_node,
     )
+
+
+@id_for_memo.register(File)
+def id_for_memo_serialize(obj, output_ref=False):
+    return pickle.dumps(obj)

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 
 import numpy as np
 from scipy.optimize import minimize
@@ -15,6 +16,8 @@ from .utils import *
 from academy.agent import Agent, action, loop
 from typing import List, Dict
 import asyncio
+
+logger = logging.getLogger()
 
 @python_app(cache=True)
 def load_files(directory, prefix) -> None:
@@ -41,13 +44,15 @@ def load_files(directory, prefix) -> None:
     else:
         return ordered_files
 
-@python_app(cache=True)
+@python_app(cache=True, ignore_for_cache=["files"])
 def save_file(
+        *,
         files,
-        filename,
+        filename, # Used for caching. Do not delete
         bin_to_2x1=True,
         outputs=()
     ) -> None:
+    logging.info(f"Running save file with file {filename}")
     ordered_data = np.empty((2,4), dtype="object")
     for iy, ix in np.ndindex(files.shape):
         file = files[iy,ix]
@@ -68,8 +73,9 @@ def save_file(
                             np.hstack((np.flip(ordered_data[1][0], axis=0),np.flip(ordered_data[1][1], axis=(0,1))))))
 
     # save images as fits files
-    fits.writeto(outputs[0], data=total_b, overwrite=True)
-    fits.writeto(outputs[1], data=total_r, overwrite=True)
+    logging.info(f"Saving file to {outputs}")
+    fits.writeto(outputs[0], data=total_b)
+    fits.writeto(outputs[1], data=total_r)
 
 @python_app
 def calculate_intenal_noise(flat_file_with_bias: str) -> np.ndarray:
@@ -88,6 +94,6 @@ def combined_bias_app(bias_file: str, internal_noise: np.ndarray, outputs=()):
         data = datahdu[0].data
 
     denoised = data/internal_noise
-    fits.writeto(filename=os.path.join(os.path.abspath("out"),file+self.color+".fits"), data=denoised, overwrite=True)
+    fits.writeto(filename=outputs[0], data=denoised, overwrite=True)
 
     return None
