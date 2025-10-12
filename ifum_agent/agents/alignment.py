@@ -45,9 +45,13 @@ class AlignmentParameters(NamedTuple):
 class AlignmentAgent(Agent):
     def __init__(
         self,
+        run_dir: str | None = None,
     ) -> None:
         super().__init__()
-        self.logger = logging.getLogger("alignment_agent")
+        logfile: str | None = None
+        if run_dir:
+            logfile = os.path.join(run_dir, "alignment_agent.log")
+        self.logger = init_logging(logfile=logfile)
         
         # Index corresponds to time
         # None means we haven't seen the timestep before

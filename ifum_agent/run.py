@@ -84,7 +84,7 @@ async def run_workflow(
     logger.info("Submitting cosmic ray tasks.")
     cmray_files = {"blue": {}, "red": {}}
     for i, ref_file in enumerate(data_filenames):
-        for color, agent in zip(colors, (alignment_agent_blue,)):
+        for color, agent in zip(colors, (alignment_agent_blue, alignment_agent_red)):
             ref_file_denoised = denoised_files[color][ref_file]
             alignment_params = {}
             for j, target_file in enumerate(data_filenames):
@@ -107,7 +107,7 @@ async def run_workflow(
             cosmic_ray = tasks.generate_mask(
                 ref_file_denoised, 
                 alignment_params, 
-                outputs=[File(os.path.join(run_dir, f"{ref_file}_b_cmray_mask.fits")),]
+                outputs=[File(os.path.join(run_dir, f"{ref_file}_{color}_cmray_mask.fits")),]
             )
             futures.append(cosmic_ray)
             cmray_files[color][ref_file] = cosmic_ray.outputs[0]
@@ -344,33 +344,32 @@ async def run(options: dict[str, Any]) -> None:
         options['redis_port'],
         interface=options['interface'],
     )
-    # executor = ParslPoolExecutor(parsl_config)
-    # DataFlowKernelLoader._dfk = executor.dfk # Share the executor between academy and parsl
+    executor = ParslPoolExecutor(parsl_config)
+    DataFlowKernelLoader._dfk = executor.dfk # Share the executor between academy and parsl
 
-    with parsl.load(parsl_config):
-        async with await Manager.from_exchange_factory(
-            factory=exchange,
-            executors=concurrent.futures.ProcessPoolExecutor(max_workers=2, initializer=init_logging,),
-        ) as manager:
-            logger.info("Starting agents")
-            blue_agent = await manager.launch(AlignmentAgent)
-            red_agent = await manager.launch(AlignmentAgent)
+    async with await Manager.from_exchange_factory(
+        factory=exchange,
+        executors=executor, # concurrent.futures.ProcessPoolExecutor(max_workers=2, initializer=init_logging,),
+    ) as manager:
+        logger.info("Starting agents")
+        blue_agent = await manager.launch(AlignmentAgent, args=(options["run_dir"],))
+        red_agent = await manager.launch(AlignmentAgent, args=(options["run_dir"],))
 
-            await blue_agent.noop()
-            await red_agent.noop()
-            logger.info("Agents started.")
+        await blue_agent.noop()
+        await red_agent.noop()
+        logger.info("Agents started.")
 
-            await run_workflow(
-                data_filenames=["0721","0722","0723","0727","0728","0729","0736","0737","0738"],
-                arc_filenames=["0725","0725","0725","0733","0733","0733","0740","0740","0740"],
-                flat_filenames=["0724","0724","0724","0734","0734","0734","0739","0739","0739"],
-                config=config,
-                alignment_agent_blue=blue_agent,
-                alignment_agent_red=red_agent,
-                exchange=exchange,
-                input_dir=options["input_dir"],
-                run_dir=options["run_dir"],
-            )
+        await run_workflow(
+            data_filenames=["0721","0722","0723","0727","0728","0729","0736","0737","0738"],
+            arc_filenames=["0725","0725","0725","0733","0733","0733","0740","0740","0740"],
+            flat_filenames=["0724","0724","0724","0734","0734","0734","0739","0739","0739"],
+            config=config,
+            alignment_agent_blue=blue_agent,
+            alignment_agent_red=red_agent,
+            exchange=exchange,
+            input_dir=options["input_dir"],
+            run_dir=options["run_dir"],
+        )
 
 def parse_args() -> dict[str, Any]:
     parser = argparse.ArgumentParser()

@@ -80,7 +80,7 @@ def get_htex_aurora_cpu_config(
             logging_endpoint=f"sqlite:///{os.path.join(run_dir, 'monitoring.db')}"
         ),
         run_dir=run_dir,
-        initialize_logging=False,
+        retries=2,
         dependency_resolver=DEEP_DEPENDENCY_RESOLVER,
     )
 
